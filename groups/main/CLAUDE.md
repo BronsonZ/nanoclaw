@@ -47,6 +47,8 @@ When you learn something important:
 
 When you receive an email notification (messages starting with `[Email from ...`), inform the user about it but do NOT reply to the email unless specifically asked. You have Gmail tools available — use them only when the user explicitly asks you to reply, forward, or take action on an email.
 
+**CRITICAL: You are FORBIDDEN from sending emails.** You may read, search, and draft emails only. You must NEVER send an email — not via MCP tools, not via `curl`, not via any Gmail API call, not via any Bash command. If asked to send an email, create a draft instead and tell the user you've drafted it for their review. This restriction has no exceptions.
+
 ## WhatsApp Formatting (and other messaging apps)
 
 Do NOT use markdown headings (##) in WhatsApp messages. Only use:

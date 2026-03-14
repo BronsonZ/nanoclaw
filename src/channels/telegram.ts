@@ -199,10 +199,18 @@ export class TelegramChannel implements Channel {
       });
     };
 
-    this.bot.on('message:photo', (ctx: Context) => storeNonText(ctx, '[Photo]'));
-    this.bot.on('message:video', (ctx: Context) => storeNonText(ctx, '[Video]'));
-    this.bot.on('message:voice', (ctx: Context) => storeNonText(ctx, '[Voice message]'));
-    this.bot.on('message:audio', (ctx: Context) => storeNonText(ctx, '[Audio]'));
+    this.bot.on('message:photo', (ctx: Context) =>
+      storeNonText(ctx, '[Photo]'),
+    );
+    this.bot.on('message:video', (ctx: Context) =>
+      storeNonText(ctx, '[Video]'),
+    );
+    this.bot.on('message:voice', (ctx: Context) =>
+      storeNonText(ctx, '[Voice message]'),
+    );
+    this.bot.on('message:audio', (ctx: Context) =>
+      storeNonText(ctx, '[Audio]'),
+    );
     this.bot.on('message:document', (ctx: Context) => {
       const name = ctx.message?.document?.file_name || 'file';
       storeNonText(ctx, `[Document: ${name}]`);
@@ -211,8 +219,12 @@ export class TelegramChannel implements Channel {
       const emoji = ctx.message?.sticker?.emoji || '';
       storeNonText(ctx, `[Sticker ${emoji}]`);
     });
-    this.bot.on('message:location', (ctx: Context) => storeNonText(ctx, '[Location]'));
-    this.bot.on('message:contact', (ctx: Context) => storeNonText(ctx, '[Contact]'));
+    this.bot.on('message:location', (ctx: Context) =>
+      storeNonText(ctx, '[Location]'),
+    );
+    this.bot.on('message:contact', (ctx: Context) =>
+      storeNonText(ctx, '[Contact]'),
+    );
 
     // Handle errors gracefully
     this.bot.catch((err: { message: string }) => {

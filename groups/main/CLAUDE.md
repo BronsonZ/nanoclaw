@@ -43,6 +43,10 @@ When you learn something important:
 - Split files larger than 500 lines into folders
 - Keep an index in your memory for the files you create
 
+## Email Notifications
+
+When you receive an email notification (messages starting with `[Email from ...`), inform the user about it but do NOT reply to the email unless specifically asked. You have Gmail tools available — use them only when the user explicitly asks you to reply, forward, or take action on an email.
+
 ## WhatsApp Formatting (and other messaging apps)
 
 Do NOT use markdown headings (##) in WhatsApp messages. Only use:
@@ -72,6 +76,47 @@ Key paths inside the container:
 - `/workspace/project/store/messages.db` - SQLite database
 - `/workspace/project/store/messages.db` (registered_groups table) - Group config
 - `/workspace/project/groups/` - All group folders
+- `/workspace/extra/obsidian/` - Obsidian vault (read-write)
+
+## Obsidian Vault
+
+You have read-write access to an Obsidian vault at `/workspace/extra/obsidian/`. Files written here sync to the user's phone via Obsidian Sync.
+
+### Usage
+
+- Create and edit Markdown files (`.md`) in this directory
+- Use standard Obsidian-compatible Markdown: headings, links (`[[note]]`), tags (`#tag`), frontmatter (YAML)
+- Organize with subdirectories as needed (e.g., `notes/`, `daily/`, `projects/`)
+- You can also delete files when asked
+
+### Examples
+
+```bash
+# Create a note
+echo "# Meeting Notes\n\nKey decisions..." > /workspace/extra/obsidian/meeting-notes.md
+
+# Create in a subdirectory
+mkdir -p /workspace/extra/obsidian/daily
+echo "# 2026-03-14\n\n- Task 1\n- Task 2" > /workspace/extra/obsidian/daily/2026-03-14.md
+
+# List existing notes
+find /workspace/extra/obsidian -name "*.md" | head -20
+```
+
+### Primary Directory
+
+- **Primary directory:** `/workspace/extra/obsidian/NanoClaw/`
+- Unless otherwise directed, all new files and folders should be created inside `NanoClaw/`
+- Everything inside `NanoClaw/` should be organized into **topic/scope-based subfolders**
+  - e.g., `NanoClaw/Travel/`, `NanoClaw/Work/`, `NanoClaw/Personal/`
+- Full read-write access to the rest of the vault exists if needed, but `NanoClaw/` is the default
+
+### Guidelines
+
+- Use descriptive filenames (kebab-case or spaces, both work in Obsidian)
+- Add `[[wikilinks]]` between related notes for Obsidian's graph view
+- Keep notes concise and well-structured
+- When the user asks to "make a note" or "save this", write to the vault
 
 ---
 

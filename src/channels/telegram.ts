@@ -1,5 +1,5 @@
 import https from 'https';
-import { Api, Bot } from 'grammy';
+import { Api, Bot, Context } from 'grammy';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
@@ -199,30 +199,30 @@ export class TelegramChannel implements Channel {
       });
     };
 
-    this.bot.on('message:photo', (ctx) => storeNonText(ctx, '[Photo]'));
-    this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
-    this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
-    this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
-    this.bot.on('message:document', (ctx) => {
-      const name = ctx.message.document?.file_name || 'file';
+    this.bot.on('message:photo', (ctx: Context) => storeNonText(ctx, '[Photo]'));
+    this.bot.on('message:video', (ctx: Context) => storeNonText(ctx, '[Video]'));
+    this.bot.on('message:voice', (ctx: Context) => storeNonText(ctx, '[Voice message]'));
+    this.bot.on('message:audio', (ctx: Context) => storeNonText(ctx, '[Audio]'));
+    this.bot.on('message:document', (ctx: Context) => {
+      const name = ctx.message?.document?.file_name || 'file';
       storeNonText(ctx, `[Document: ${name}]`);
     });
-    this.bot.on('message:sticker', (ctx) => {
-      const emoji = ctx.message.sticker?.emoji || '';
+    this.bot.on('message:sticker', (ctx: Context) => {
+      const emoji = ctx.message?.sticker?.emoji || '';
       storeNonText(ctx, `[Sticker ${emoji}]`);
     });
-    this.bot.on('message:location', (ctx) => storeNonText(ctx, '[Location]'));
-    this.bot.on('message:contact', (ctx) => storeNonText(ctx, '[Contact]'));
+    this.bot.on('message:location', (ctx: Context) => storeNonText(ctx, '[Location]'));
+    this.bot.on('message:contact', (ctx: Context) => storeNonText(ctx, '[Contact]'));
 
     // Handle errors gracefully
-    this.bot.catch((err) => {
+    this.bot.catch((err: { message: string }) => {
       logger.error({ err: err.message }, 'Telegram bot error');
     });
 
     // Start polling — returns a Promise that resolves when started
     return new Promise<void>((resolve) => {
       this.bot!.start({
-        onStart: (botInfo) => {
+        onStart: (botInfo: { username: string; id: number }) => {
           logger.info(
             { username: botInfo.username, id: botInfo.id },
             'Telegram bot connected',

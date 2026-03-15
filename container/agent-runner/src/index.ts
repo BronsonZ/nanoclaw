@@ -444,8 +444,8 @@ async function runQuery(
           args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
         },
         seerr: {
-          command: 'npx',
-          args: ['-y', '@jhomen368/overseerr-mcp'],
+          command: 'node',
+          args: ['/workspace/mcp-servers/overseerr-mcp/index.js'],
           env: {
             SEERR_URL: process.env.SEERR_URL || '',
             SEERR_API_KEY: process.env.SEERR_API_KEY || '',

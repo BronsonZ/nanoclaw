@@ -176,6 +176,16 @@ function buildVolumeMounts(
     });
   }
 
+  // Custom MCP server builds (read-only, shared across all groups)
+  const mcpBuildsDir = path.join(homeDir, 'repos', 'mcp', 'builds');
+  if (fs.existsSync(mcpBuildsDir)) {
+    mounts.push({
+      hostPath: mcpBuildsDir,
+      containerPath: '/workspace/mcp-servers',
+      readonly: true,
+    });
+  }
+
   // Per-group IPC namespace: each group gets its own IPC directory
   // This prevents cross-group privilege escalation via IPC
   const groupIpcDir = resolveGroupIpcPath(group.folder);

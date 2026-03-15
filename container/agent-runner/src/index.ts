@@ -409,6 +409,7 @@ async function runQuery(
         'NotebookEdit',
         'mcp__nanoclaw__*',
         'mcp__gmail__*',
+        'mcp__seerr__*',
       ],
       disallowedTools: [
         'mcp__gmail__send_email',
@@ -441,6 +442,14 @@ async function runQuery(
         gmail: {
           command: 'npx',
           args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
+        },
+        seerr: {
+          command: 'npx',
+          args: ['-y', '@jhomen368/overseerr-mcp'],
+          env: {
+            SEERR_URL: process.env.SEERR_URL || '',
+            SEERR_API_KEY: process.env.SEERR_API_KEY || '',
+          },
         },
       },
       hooks: {

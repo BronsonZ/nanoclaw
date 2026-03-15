@@ -27,6 +27,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
+import { readEnvFile } from './env.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
@@ -248,6 +249,15 @@ function buildContainerArgs(
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
+  }
+
+  // Seerr MCP credentials
+  const seerrEnv = readEnvFile(['SEERR_URL', 'SEERR_API_KEY']);
+  if (seerrEnv.SEERR_URL) {
+    args.push('-e', `SEERR_URL=${seerrEnv.SEERR_URL}`);
+  }
+  if (seerrEnv.SEERR_API_KEY) {
+    args.push('-e', `SEERR_API_KEY=${seerrEnv.SEERR_API_KEY}`);
   }
 
   // Runtime-specific args for host gateway resolution

@@ -19,7 +19,8 @@ Single Node.js process with skill-based channel system. Channels (WhatsApp, Tele
 | `src/task-scheduler.ts` | Runs scheduled tasks |
 | `src/db.ts` | SQLite operations |
 | `groups/{name}/CLAUDE.md` | Per-group memory (isolated) |
-| `container/skills/agent-browser.md` | Browser automation tool (available to all agents via Bash) |
+| `container/skills/agent-browser/` | Browser automation tool (available to all agents via Bash) |
+| `container/skills/email-digest/` | Email digest skill — summarizes recent emails and flags urgent items |
 
 ## Skills
 

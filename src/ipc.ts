@@ -388,7 +388,6 @@ export async function processTaskIpc(
         }
 
         updateTask(data.taskId, updates);
-        taskMutated = true;
         logger.info(
           { taskId: data.taskId, sourceGroup, updates },
           'Task updated via IPC',
@@ -458,5 +457,4 @@ export async function processTaskIpc(
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');
   }
-
 }

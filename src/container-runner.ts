@@ -96,6 +96,16 @@ function buildVolumeMounts(
       containerPath: '/workspace/group',
       readonly: false,
     });
+
+    // Main group gets read-write access to global memory
+    const globalDir = path.join(GROUPS_DIR, 'global');
+    if (fs.existsSync(globalDir)) {
+      mounts.push({
+        hostPath: globalDir,
+        containerPath: '/workspace/global',
+        readonly: false,
+      });
+    }
   } else {
     // Other groups only get their own folder
     mounts.push({
@@ -141,6 +151,9 @@ function buildVolumeMounts(
             // Enable Claude's memory feature (persists user preferences between sessions)
             // https://code.claude.com/docs/en/memory#manage-auto-memory
             CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+            // Default model for Claude Agent SDK
+            // Override via ANTHROPIC_MODEL in .env (applies to all groups)
+            ANTHROPIC_MODEL: 'opus',
           },
         },
         null,
@@ -306,6 +319,12 @@ async function buildContainerArgs(
   }
   if (githubEnv.GIT_USER_EMAIL) {
     args.push('-e', `GIT_USER_EMAIL=${githubEnv.GIT_USER_EMAIL}`);
+  }
+
+  // Model override (applies to all groups, takes precedence over settings.json)
+  const modelEnv = readEnvFile(['ANTHROPIC_MODEL']);
+  if (modelEnv.ANTHROPIC_MODEL) {
+    args.push('-e', `ANTHROPIC_MODEL=${modelEnv.ANTHROPIC_MODEL}`);
   }
 
   // Runtime-specific args for host gateway resolution

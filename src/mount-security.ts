@@ -11,8 +11,14 @@ import os from 'os';
 import path from 'path';
 import pino from 'pino';
 
-import { MOUNT_ALLOWLIST_PATH } from './config.js';
-import { AdditionalMount, AllowedRoot, MountAllowlist } from './types.js';
+import { CONTAINER_CONFIG_PATH, MOUNT_ALLOWLIST_PATH } from './config.js';
+import {
+  AdditionalMount,
+  AllowedRoot,
+  ConfigMount,
+  ContainerConfigFile,
+  MountAllowlist,
+} from './types.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -416,4 +422,136 @@ export function generateAllowlistTemplate(): string {
   };
 
   return JSON.stringify(template, null, 2);
+}
+
+/**
+ * Load the unified container config from the external config location.
+ * Returns null if the file doesn't exist or is invalid.
+ * Read fresh each call — no caching.
+ */
+export function loadContainerConfig(): ContainerConfigFile | null {
+  try {
+    if (!fs.existsSync(CONTAINER_CONFIG_PATH)) {
+      return null;
+    }
+
+    const content = fs.readFileSync(CONTAINER_CONFIG_PATH, 'utf-8');
+    const config = JSON.parse(content) as ContainerConfigFile;
+
+    if (config.version !== 1) {
+      logger.error(
+        { path: CONTAINER_CONFIG_PATH, version: config.version },
+        'Unsupported container config version (expected 1)',
+      );
+      return null;
+    }
+
+    if (!Array.isArray(config.mounts)) {
+      logger.error(
+        { path: CONTAINER_CONFIG_PATH },
+        'Container config: mounts must be an array',
+      );
+      return null;
+    }
+
+    if (
+      !config.security ||
+      !Array.isArray(config.security.extraBlockedPatterns) ||
+      typeof config.security.nonMainReadOnly !== 'boolean'
+    ) {
+      logger.error(
+        { path: CONTAINER_CONFIG_PATH },
+        'Container config: security section is invalid',
+      );
+      return null;
+    }
+
+    return config;
+  } catch (err) {
+    logger.error(
+      {
+        path: CONTAINER_CONFIG_PATH,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'Failed to load container config',
+    );
+    return null;
+  }
+}
+
+/**
+ * Get validated mounts from the container config file.
+ * Returns null if no config file exists. Returns empty array if config
+ * exists but no mounts pass validation for this group type.
+ */
+export function getConfigMounts(
+  isMain: boolean,
+): Array<{
+  hostPath: string;
+  containerPath: string;
+  readonly: boolean;
+}> | null {
+  const config = loadContainerConfig();
+  if (!config) {
+    return null;
+  }
+
+  const mergedBlockedPatterns = [
+    ...new Set([
+      ...DEFAULT_BLOCKED_PATTERNS,
+      ...config.security.extraBlockedPatterns,
+    ]),
+  ];
+
+  const mounts: Array<{
+    hostPath: string;
+    containerPath: string;
+    readonly: boolean;
+  }> = [];
+
+  for (const mount of config.mounts) {
+    // Scope filter: main group gets all mounts, others only get allGroups mounts
+    if (!isMain && !mount.allGroups) {
+      continue;
+    }
+
+    if (!isValidContainerPath(mount.containerPath)) {
+      logger.warn(
+        { containerPath: mount.containerPath },
+        'Config mount skipped: invalid container path',
+      );
+      continue;
+    }
+
+    const expandedPath = expandPath(mount.path);
+    const realPath = getRealPath(expandedPath);
+
+    if (realPath === null) {
+      logger.warn(
+        { path: mount.path, expanded: expandedPath },
+        'Config mount skipped: host path does not exist',
+      );
+      continue;
+    }
+
+    const blockedMatch = matchesBlockedPattern(realPath, mergedBlockedPatterns);
+    if (blockedMatch !== null) {
+      logger.warn(
+        { path: realPath, pattern: blockedMatch },
+        'Config mount skipped: matches blocked pattern',
+      );
+      continue;
+    }
+
+    const effectiveReadonly =
+      !mount.readWrite || (!isMain && config.security.nonMainReadOnly);
+
+    mounts.push({
+      hostPath: realPath,
+      containerPath: `/workspace/extra/${mount.containerPath}`,
+      readonly: effectiveReadonly,
+    });
+  }
+
+  return mounts;
 }

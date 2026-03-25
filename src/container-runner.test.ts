@@ -49,6 +49,7 @@ vi.mock('fs', async () => {
 // Mock mount-security
 vi.mock('./mount-security.js', () => ({
   validateAdditionalMounts: vi.fn(() => []),
+  getConfigMounts: vi.fn(() => null),
 }));
 
 // Mock OneCLI SDK

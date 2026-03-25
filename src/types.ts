@@ -105,3 +105,22 @@ export type OnChatMetadata = (
   channel?: string,
   isGroup?: boolean,
 ) => void;
+
+// --- Container config file (declarative mount/MCP/env config) ---
+
+export interface ContainerConfigFile {
+  version: number;
+  mounts: ConfigMount[];
+  security: {
+    extraBlockedPatterns: string[];
+    nonMainReadOnly: boolean;
+  };
+}
+
+export interface ConfigMount {
+  path: string;
+  containerPath: string;
+  readWrite: boolean;
+  allGroups?: boolean;
+  description?: string;
+}

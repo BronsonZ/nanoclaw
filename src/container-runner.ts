@@ -27,7 +27,7 @@ import {
 } from './container-runtime.js';
 import { OneCLI } from '@onecli-sh/sdk';
 import { readEnvFile } from './env.js';
-import { validateAdditionalMounts } from './mount-security.js';
+import { getConfigMounts, validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL });
@@ -212,6 +212,12 @@ function buildVolumeMounts(
     containerPath: '/app/src',
     readonly: false,
   });
+
+  // Config-driven mounts (additive — does not replace existing mounts)
+  const configMounts = getConfigMounts(isMain);
+  if (configMounts) {
+    mounts.push(...configMounts);
+  }
 
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {

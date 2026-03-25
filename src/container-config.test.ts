@@ -158,7 +158,27 @@ describe('getConfigMounts', () => {
       hostPath: fs.realpathSync(dir),
       containerPath: '/workspace/extra/vault',
       readonly: false,
+      description: undefined,
     });
+  });
+
+  it('returns description when provided', () => {
+    const dir = createMountDir('vault');
+    writeConfig(
+      validConfig({
+        mounts: [
+          {
+            path: dir,
+            containerPath: 'vault',
+            readWrite: true,
+            description: 'Test vault',
+          },
+        ],
+      }),
+    );
+
+    const result = getConfigMounts(true);
+    expect(result![0].description).toBe('Test vault');
   });
 
   it('filters non-allGroups mounts for non-main group', () => {

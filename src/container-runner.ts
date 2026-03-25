@@ -219,6 +219,30 @@ function buildVolumeMounts(
     mounts.push(...configMounts);
   }
 
+  // Write mount descriptions so the agent knows what's available
+  if (configMounts && configMounts.length > 0) {
+    const mountInfoDir = path.join(
+      DATA_DIR,
+      'sessions',
+      group.folder,
+      'mount-info',
+    );
+    fs.mkdirSync(mountInfoDir, { recursive: true });
+    const lines = ['# Additional Mounted Directories', ''];
+    for (const m of configMounts) {
+      const mode = m.readonly ? 'read-only' : 'read-write';
+      const desc = m.description ? ` — ${m.description}` : '';
+      lines.push(`- \`${m.containerPath}\` (${mode})${desc}`);
+    }
+    lines.push('');
+    fs.writeFileSync(path.join(mountInfoDir, 'CLAUDE.md'), lines.join('\n'));
+    mounts.push({
+      hostPath: mountInfoDir,
+      containerPath: '/workspace/extra/.mounts',
+      readonly: true,
+    });
+  }
+
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {
     const validatedMounts = validateAdditionalMounts(

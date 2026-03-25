@@ -1,5 +1,5 @@
 import https from 'https';
-import { Api, Bot, Context } from 'grammy';
+import { Api, Bot } from 'grammy';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
@@ -100,6 +100,7 @@ export class TelegramChannel implements Channel {
         'Unknown';
       const sender = ctx.from?.id.toString() || '';
       const msgId = ctx.message.message_id.toString();
+      const threadId = ctx.message.message_thread_id;
 
       // Determine chat name
       const chatName =
@@ -157,6 +158,7 @@ export class TelegramChannel implements Channel {
         content,
         timestamp,
         is_from_me: false,
+        thread_id: threadId ? threadId.toString() : undefined,
       });
 
       logger.info(
@@ -199,42 +201,30 @@ export class TelegramChannel implements Channel {
       });
     };
 
-    this.bot.on('message:photo', (ctx: Context) =>
-      storeNonText(ctx, '[Photo]'),
-    );
-    this.bot.on('message:video', (ctx: Context) =>
-      storeNonText(ctx, '[Video]'),
-    );
-    this.bot.on('message:voice', (ctx: Context) =>
-      storeNonText(ctx, '[Voice message]'),
-    );
-    this.bot.on('message:audio', (ctx: Context) =>
-      storeNonText(ctx, '[Audio]'),
-    );
-    this.bot.on('message:document', (ctx: Context) => {
-      const name = ctx.message?.document?.file_name || 'file';
+    this.bot.on('message:photo', (ctx) => storeNonText(ctx, '[Photo]'));
+    this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
+    this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
+    this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
+    this.bot.on('message:document', (ctx) => {
+      const name = ctx.message.document?.file_name || 'file';
       storeNonText(ctx, `[Document: ${name}]`);
     });
-    this.bot.on('message:sticker', (ctx: Context) => {
-      const emoji = ctx.message?.sticker?.emoji || '';
+    this.bot.on('message:sticker', (ctx) => {
+      const emoji = ctx.message.sticker?.emoji || '';
       storeNonText(ctx, `[Sticker ${emoji}]`);
     });
-    this.bot.on('message:location', (ctx: Context) =>
-      storeNonText(ctx, '[Location]'),
-    );
-    this.bot.on('message:contact', (ctx: Context) =>
-      storeNonText(ctx, '[Contact]'),
-    );
+    this.bot.on('message:location', (ctx) => storeNonText(ctx, '[Location]'));
+    this.bot.on('message:contact', (ctx) => storeNonText(ctx, '[Contact]'));
 
     // Handle errors gracefully
-    this.bot.catch((err: { message: string }) => {
+    this.bot.catch((err) => {
       logger.error({ err: err.message }, 'Telegram bot error');
     });
 
     // Start polling — returns a Promise that resolves when started
     return new Promise<void>((resolve) => {
       this.bot!.start({
-        onStart: (botInfo: { username: string; id: number }) => {
+        onStart: (botInfo) => {
           logger.info(
             { username: botInfo.username, id: botInfo.id },
             'Telegram bot connected',
@@ -249,7 +239,11 @@ export class TelegramChannel implements Channel {
     });
   }
 
-  async sendMessage(jid: string, text: string): Promise<void> {
+  async sendMessage(
+    jid: string,
+    text: string,
+    threadId?: string,
+  ): Promise<void> {
     if (!this.bot) {
       logger.warn('Telegram bot not initialized');
       return;
@@ -257,21 +251,28 @@ export class TelegramChannel implements Channel {
 
     try {
       const numericId = jid.replace(/^tg:/, '');
+      const options = threadId
+        ? { message_thread_id: parseInt(threadId, 10) }
+        : {};
 
       // Telegram has a 4096 character limit per message — split if needed
       const MAX_LENGTH = 4096;
       if (text.length <= MAX_LENGTH) {
-        await sendTelegramMessage(this.bot.api, numericId, text);
+        await sendTelegramMessage(this.bot.api, numericId, text, options);
       } else {
         for (let i = 0; i < text.length; i += MAX_LENGTH) {
           await sendTelegramMessage(
             this.bot.api,
             numericId,
             text.slice(i, i + MAX_LENGTH),
+            options,
           );
         }
       }
-      logger.info({ jid, length: text.length }, 'Telegram message sent');
+      logger.info(
+        { jid, length: text.length, threadId },
+        'Telegram message sent',
+      );
     } catch (err) {
       logger.error({ jid, err }, 'Failed to send Telegram message');
     }

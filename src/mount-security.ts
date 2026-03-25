@@ -484,9 +484,7 @@ export function loadContainerConfig(): ContainerConfigFile | null {
  * Returns null if no config file exists. Returns empty array if config
  * exists but no mounts pass validation for this group type.
  */
-export function getConfigMounts(
-  isMain: boolean,
-): Array<{
+export function getConfigMounts(isMain: boolean): Array<{
   hostPath: string;
   containerPath: string;
   readonly: boolean;

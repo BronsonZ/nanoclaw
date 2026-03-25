@@ -260,6 +260,24 @@ async function buildContainerArgs(
     args.push('-e', `SEERR_API_KEY=${seerrEnv.SEERR_API_KEY}`);
   }
 
+  // GitHub credentials (PAT + git identity)
+  const githubEnv = readEnvFile([
+    'GITHUB_TOKEN',
+    'GIT_USER_NAME',
+    'GIT_USER_EMAIL',
+  ]);
+  if (githubEnv.GITHUB_TOKEN) {
+    args.push('-e', `GITHUB_TOKEN=${githubEnv.GITHUB_TOKEN}`);
+    // GitHub MCP server expects this env var name
+    args.push('-e', `GITHUB_PERSONAL_ACCESS_TOKEN=${githubEnv.GITHUB_TOKEN}`);
+  }
+  if (githubEnv.GIT_USER_NAME) {
+    args.push('-e', `GIT_USER_NAME=${githubEnv.GIT_USER_NAME}`);
+  }
+  if (githubEnv.GIT_USER_EMAIL) {
+    args.push('-e', `GIT_USER_EMAIL=${githubEnv.GIT_USER_EMAIL}`);
+  }
+
   // Runtime-specific args for host gateway resolution
   args.push(...hostGatewayArgs());
 

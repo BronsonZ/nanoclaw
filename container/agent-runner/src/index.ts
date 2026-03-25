@@ -17,6 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import { query, HookCallback, PreCompactHookInput } from '@anthropic-ai/claude-agent-sdk';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 interface ContainerInput {
@@ -410,6 +411,7 @@ async function runQuery(
         'mcp__nanoclaw__*',
         'mcp__gmail__*',
         'mcp__seerr__*',
+        'mcp__github__*',
       ],
       disallowedTools: [
         'mcp__gmail__send_email',
@@ -424,6 +426,8 @@ async function runQuery(
         'mcp__gmail__create_filter',
         'mcp__gmail__delete_filter',
         'mcp__gmail__create_filter_from_template',
+        'mcp__github__delete_repository',
+        'mcp__github__fork_repository',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -449,6 +453,13 @@ async function runQuery(
           env: {
             SEERR_URL: process.env.SEERR_URL || '',
             SEERR_API_KEY: process.env.SEERR_API_KEY || '',
+          },
+        },
+        github: {
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-github'],
+          env: {
+            GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || '',
           },
         },
       },
@@ -492,6 +503,23 @@ async function runQuery(
   return { newSessionId, lastAssistantUuid, closedDuringQuery };
 }
 
+/** Configure git with token-based HTTPS auth and user identity when GITHUB_TOKEN is set. */
+function setupGitConfig(): void {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return;
+  try {
+    execSync(`git config --global url."https://${token}@github.com/".insteadOf "https://github.com/"`, { stdio: 'pipe' });
+    const name = process.env.GIT_USER_NAME;
+    const email = process.env.GIT_USER_EMAIL;
+    if (name) execSync(`git config --global user.name "${name}"`, { stdio: 'pipe' });
+    if (email) execSync(`git config --global user.email "${email}"`, { stdio: 'pipe' });
+    execSync('git config --global init.defaultBranch main', { stdio: 'pipe' });
+    log('Git configured with GitHub credentials');
+  } catch (err) {
+    log(`Git config failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 async function main(): Promise<void> {
   let containerInput: ContainerInput;
 
@@ -508,6 +536,9 @@ async function main(): Promise<void> {
     });
     process.exit(1);
   }
+
+  // Configure git credentials and identity (if GITHUB_TOKEN is set)
+  setupGitConfig();
 
   // Credentials are injected by the host's credential proxy via ANTHROPIC_BASE_URL.
   // No real secrets exist in the container environment.

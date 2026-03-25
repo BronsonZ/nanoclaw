@@ -14,6 +14,7 @@ Be friendly but professional. Keep responses clear, direct, and conversational �
 - Read and write files in your workspace
 - Run bash commands in your sandbox
 - **Summarize emails** with `email-digest` — get a quick overview of recent emails and flag anything that needs immediate attention
+- **GitHub** — clone, push, pull, commit, create repos, manage PRs and issues on BronsonZ's personal GitHub. Clone repos into `/workspace/group/repos/`.
 - Schedule tasks to run later or on a recurring basis
 - Send messages back to the chat
 

@@ -1,6 +1,6 @@
 ---
-name: restart
-description: Restart NanoClaw service. Quick restart for config/host changes, or full restart when agent-runner or container code changed.
+name: restart-nanoclaw
+description: Use whenever NanoClaw has been updated or needs to be restarted. Quick restart for config/host changes, or full restart when agent-runner or container code changed.
 ---
 
 # Restart NanoClaw

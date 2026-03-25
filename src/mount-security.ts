@@ -12,11 +12,13 @@ import path from 'path';
 import pino from 'pino';
 
 import { CONTAINER_CONFIG_PATH, MOUNT_ALLOWLIST_PATH } from './config.js';
+import { readEnvFile } from './env.js';
 import {
   AdditionalMount,
   AllowedRoot,
   ConfigMount,
   ContainerConfigFile,
+  McpServerConfig,
   MountAllowlist,
 } from './types.js';
 
@@ -558,4 +560,125 @@ export function getConfigMounts(isMain: boolean): Array<{
   }
 
   return mounts;
+}
+
+// --- Declarative MCP server config ---
+
+export interface ResolvedMcpServers {
+  servers: Record<
+    string,
+    { command: string; args: string[]; env?: Record<string, string> }
+  >;
+  extraAllowedTools: string[];
+  extraDisallowedTools: string[];
+  mcpMounts: Array<{
+    hostPath: string;
+    containerPath: string;
+    readonly: boolean;
+  }>;
+}
+
+/**
+ * Resolve MCP server config from the container config file.
+ * Returns null if no config file or no mcpServers section.
+ * Resolves envFromDotenv via readEnvFile(), validates per-server mounts,
+ * and builds tool allow/disallow patterns.
+ */
+export function getConfigMcpServers(): ResolvedMcpServers | null {
+  const config = loadContainerConfig();
+  if (!config || !config.mcpServers) {
+    return null;
+  }
+
+  const servers: Record<
+    string,
+    { command: string; args: string[]; env?: Record<string, string> }
+  > = {};
+  const extraAllowedTools: string[] = [];
+  const extraDisallowedTools: string[] = [];
+  const mcpMounts: Array<{
+    hostPath: string;
+    containerPath: string;
+    readonly: boolean;
+  }> = [];
+
+  // Collect all envFromDotenv keys across all servers for a single readEnvFile() call
+  const allDotenvKeys: string[] = [];
+  for (const serverConfig of Object.values(config.mcpServers)) {
+    if (serverConfig.envFromDotenv) {
+      allDotenvKeys.push(...serverConfig.envFromDotenv);
+    }
+  }
+  const dotenvValues =
+    allDotenvKeys.length > 0 ? readEnvFile(allDotenvKeys) : {};
+
+  for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+    if (!serverConfig.command) {
+      logger.warn({ server: name }, 'MCP server skipped: missing command');
+      continue;
+    }
+
+    // Resolve env: static literals + envFromDotenv values
+    const resolvedEnv: Record<string, string> = {};
+    if (serverConfig.env) {
+      Object.assign(resolvedEnv, serverConfig.env);
+    }
+    if (serverConfig.envFromDotenv) {
+      for (const key of serverConfig.envFromDotenv) {
+        const value = dotenvValues[key];
+        if (value) {
+          resolvedEnv[key] = value;
+        } else {
+          logger.warn(
+            { server: name, key },
+            'MCP server env key not found in .env — passing empty string',
+          );
+          resolvedEnv[key] = '';
+        }
+      }
+    }
+
+    servers[name] = {
+      command: serverConfig.command,
+      args: serverConfig.args,
+      ...(Object.keys(resolvedEnv).length > 0 ? { env: resolvedEnv } : {}),
+    };
+
+    // Tool patterns
+    if (serverConfig.allowedTools) {
+      extraAllowedTools.push(
+        ...serverConfig.allowedTools.map((t) => `mcp__${name}__${t}`),
+      );
+    } else {
+      extraAllowedTools.push(`mcp__${name}__*`);
+    }
+
+    if (serverConfig.disallowedTools) {
+      extraDisallowedTools.push(
+        ...serverConfig.disallowedTools.map((t) => `mcp__${name}__${t}`),
+      );
+    }
+
+    // Per-server mounts (credential dirs, not /workspace/extra/ — absolute container paths)
+    if (serverConfig.mounts) {
+      for (const mount of serverConfig.mounts) {
+        const expandedPath = expandPath(mount.hostPath);
+        const realPath = getRealPath(expandedPath);
+        if (realPath === null) {
+          logger.warn(
+            { server: name, path: mount.hostPath, expanded: expandedPath },
+            'MCP server mount skipped: path does not exist',
+          );
+          continue;
+        }
+        mcpMounts.push({
+          hostPath: realPath,
+          containerPath: mount.containerPath,
+          readonly: !mount.readWrite,
+        });
+      }
+    }
+  }
+
+  return { servers, extraAllowedTools, extraDisallowedTools, mcpMounts };
 }

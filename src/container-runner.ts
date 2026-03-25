@@ -14,6 +14,7 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  MCP_CONTEXT_DIR,
   MOUNT_CONTEXT_DIR,
   ONECLI_URL,
   TIMEZONE,
@@ -28,7 +29,12 @@ import {
 } from './container-runtime.js';
 import { OneCLI } from '@onecli-sh/sdk';
 import { readEnvFile } from './env.js';
-import { getConfigMounts, validateAdditionalMounts } from './mount-security.js';
+import {
+  getConfigMcpServers,
+  getConfigMounts,
+  loadContainerConfig,
+  validateAdditionalMounts,
+} from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL });
@@ -45,6 +51,12 @@ export interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  mcpServers?: Record<
+    string,
+    { command: string; args: string[]; env?: Record<string, string> }
+  >;
+  extraAllowedTools?: string[];
+  extraDisallowedTools?: string[];
 }
 
 export interface ContainerOutput {
@@ -91,6 +103,41 @@ function readMountContext(contextFile: string): string | null {
         error: err instanceof Error ? err.message : String(err),
       },
       'Failed to read mount context file',
+    );
+    return null;
+  }
+}
+
+/**
+ * Read a sidecar context file for an MCP server from ~/.config/nanoclaw/mcp-context/.
+ * Returns the file content or null if missing/unreadable.
+ */
+function readMcpContext(contextFile: string): string | null {
+  const basename = path.basename(contextFile);
+  if (basename !== contextFile) {
+    logger.warn(
+      { contextFile },
+      'MCP contextFile contains path separators — using basename only',
+    );
+  }
+
+  const fullPath = path.join(MCP_CONTEXT_DIR, basename);
+  try {
+    if (!fs.existsSync(fullPath)) {
+      logger.warn(
+        { contextFile: basename, path: fullPath },
+        'MCP context file not found — server will have description only',
+      );
+      return null;
+    }
+    return fs.readFileSync(fullPath, 'utf-8').trim();
+  } catch (err) {
+    logger.warn(
+      {
+        contextFile: basename,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'Failed to read MCP context file',
     );
     return null;
   }
@@ -302,6 +349,43 @@ function buildVolumeMounts(
     });
   }
 
+  // MCP server mounts (e.g., Gmail OAuth credentials)
+  const mcpConfig = getConfigMcpServers();
+  if (mcpConfig) {
+    mounts.push(...mcpConfig.mcpMounts);
+  }
+
+  // MCP tool context: generate CLAUDE.md describing available MCP servers
+  const rawConfig = loadContainerConfig();
+  if (rawConfig?.mcpServers && Object.keys(rawConfig.mcpServers).length > 0) {
+    const mcpInfoDir = path.join(
+      DATA_DIR,
+      'sessions',
+      group.folder,
+      'mcp-info',
+    );
+    fs.mkdirSync(mcpInfoDir, { recursive: true });
+    const mcpLines = ['# Available MCP Tool Servers', ''];
+    for (const [name, serverConfig] of Object.entries(rawConfig.mcpServers)) {
+      mcpLines.push(`## ${name}`, '');
+      if (serverConfig.description) {
+        mcpLines.push(serverConfig.description, '');
+      }
+      if (serverConfig.contextFile) {
+        const context = readMcpContext(serverConfig.contextFile);
+        if (context) {
+          mcpLines.push(context, '');
+        }
+      }
+    }
+    fs.writeFileSync(path.join(mcpInfoDir, 'CLAUDE.md'), mcpLines.join('\n'));
+    mounts.push({
+      hostPath: mcpInfoDir,
+      containerPath: '/workspace/extra/.mcp',
+      readonly: true,
+    });
+  }
+
   // Additional mounts validated against external allowlist (tamper-proof from containers)
   if (group.containerConfig?.additionalMounts) {
     const validatedMounts = validateAdditionalMounts(
@@ -340,37 +424,24 @@ async function buildContainerArgs(
     );
   }
 
-  // Seerr MCP credentials
-  const seerrEnv = readEnvFile(['SEERR_URL', 'SEERR_API_KEY']);
-  if (seerrEnv.SEERR_URL) {
-    args.push('-e', `SEERR_URL=${seerrEnv.SEERR_URL}`);
-  }
-  if (seerrEnv.SEERR_API_KEY) {
-    args.push('-e', `SEERR_API_KEY=${seerrEnv.SEERR_API_KEY}`);
-  }
-
-  // GitHub credentials (PAT + git identity)
-  const githubEnv = readEnvFile([
-    'GITHUB_TOKEN',
-    'GIT_USER_NAME',
-    'GIT_USER_EMAIL',
-  ]);
-  if (githubEnv.GITHUB_TOKEN) {
-    args.push('-e', `GITHUB_TOKEN=${githubEnv.GITHUB_TOKEN}`);
-    // GitHub MCP server expects this env var name
-    args.push('-e', `GITHUB_PERSONAL_ACCESS_TOKEN=${githubEnv.GITHUB_TOKEN}`);
-  }
-  if (githubEnv.GIT_USER_NAME) {
-    args.push('-e', `GIT_USER_NAME=${githubEnv.GIT_USER_NAME}`);
-  }
-  if (githubEnv.GIT_USER_EMAIL) {
-    args.push('-e', `GIT_USER_EMAIL=${githubEnv.GIT_USER_EMAIL}`);
-  }
-
   // Model override (applies to all groups, takes precedence over settings.json)
   const modelEnv = readEnvFile(['ANTHROPIC_MODEL']);
   if (modelEnv.ANTHROPIC_MODEL) {
     args.push('-e', `ANTHROPIC_MODEL=${modelEnv.ANTHROPIC_MODEL}`);
+  }
+
+  // Config-driven container env vars (top-level envFromDotenv)
+  // Handles GITHUB_TOKEN, GIT_USER_NAME, GIT_USER_EMAIL (for setupGitConfig)
+  // and any other container-level env vars declared in config
+  const containerConfig = loadContainerConfig();
+  if (
+    containerConfig?.envFromDotenv &&
+    containerConfig.envFromDotenv.length > 0
+  ) {
+    const topLevelEnv = readEnvFile(containerConfig.envFromDotenv);
+    for (const [key, value] of Object.entries(topLevelEnv)) {
+      args.push('-e', `${key}=${value}`);
+    }
   }
 
   // Runtime-specific args for host gateway resolution
@@ -461,7 +532,19 @@ export async function runContainerAgent(
     let stdoutTruncated = false;
     let stderrTruncated = false;
 
-    container.stdin.write(JSON.stringify(input));
+    // Enrich input with declarative MCP config (resolved on host)
+    const mcpResolved = getConfigMcpServers();
+    let enrichedInput: ContainerInput = input;
+    if (mcpResolved && Object.keys(mcpResolved.servers).length > 0) {
+      enrichedInput = {
+        ...input,
+        mcpServers: mcpResolved.servers,
+        extraAllowedTools: mcpResolved.extraAllowedTools,
+        extraDisallowedTools: mcpResolved.extraDisallowedTools,
+      };
+    }
+
+    container.stdin.write(JSON.stringify(enrichedInput));
     container.stdin.end();
 
     // Streaming output: parse OUTPUT_START/END marker pairs as they arrive

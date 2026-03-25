@@ -28,10 +28,20 @@ vi.mock('pino', () => {
   return { default: () => logger };
 });
 
+// Mock env.js for getConfigMcpServers tests
+vi.mock('./env.js', () => ({
+  readEnvFile: vi.fn(() => ({})),
+}));
+
 // We need to set CONTAINER_CONFIG_PATH dynamically per test.
 // Import after mocks are set up.
 import * as config from './config.js';
-import { loadContainerConfig, getConfigMounts } from './mount-security.js';
+import { readEnvFile } from './env.js';
+import {
+  getConfigMcpServers,
+  getConfigMounts,
+  loadContainerConfig,
+} from './mount-security.js';
 import type { ContainerConfigFile } from './types.js';
 
 function configPath(): string {
@@ -386,5 +396,249 @@ describe('getConfigMounts', () => {
     const result = getConfigMounts(true);
     expect(result).toHaveLength(1);
     expect(result![0].containerPath).toBe('/workspace/extra/good');
+  });
+});
+
+// ─── loadContainerConfig — MCP fields ────────────────────────────────
+
+describe('loadContainerConfig — MCP fields', () => {
+  it('accepts config with mcpServers', () => {
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          test: { command: 'echo', args: ['hello'] },
+        },
+      }),
+    );
+    const result = loadContainerConfig();
+    expect(result?.mcpServers?.test.command).toBe('echo');
+  });
+
+  it('accepts config with top-level envFromDotenv', () => {
+    writeConfig(
+      validConfig({
+        envFromDotenv: ['GITHUB_TOKEN'],
+      }),
+    );
+    const result = loadContainerConfig();
+    expect(result?.envFromDotenv).toEqual(['GITHUB_TOKEN']);
+  });
+
+  it('accepts config without mcpServers (backward compatible)', () => {
+    writeConfig(validConfig());
+    const result = loadContainerConfig();
+    expect(result).not.toBeNull();
+    expect(result?.mcpServers).toBeUndefined();
+  });
+});
+
+// ─── getConfigMcpServers ─────────────────────────────────────────────
+
+describe('getConfigMcpServers', () => {
+  it('returns null when no config file exists', () => {
+    setConfigPath();
+    expect(getConfigMcpServers()).toBeNull();
+  });
+
+  it('returns null when config has no mcpServers', () => {
+    writeConfig(validConfig());
+    expect(getConfigMcpServers()).toBeNull();
+  });
+
+  it('resolves envFromDotenv via readEnvFile', () => {
+    vi.mocked(readEnvFile).mockReturnValueOnce({
+      SEERR_URL: 'http://localhost:5055',
+      SEERR_API_KEY: 'test-key',
+    });
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          seerr: {
+            command: 'npx',
+            args: ['-y', '@jhomen368/overseerr-mcp'],
+            envFromDotenv: ['SEERR_URL', 'SEERR_API_KEY'],
+          },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.servers.seerr.env).toEqual({
+      SEERR_URL: 'http://localhost:5055',
+      SEERR_API_KEY: 'test-key',
+    });
+  });
+
+  it('merges static env with envFromDotenv', () => {
+    vi.mocked(readEnvFile).mockReturnValueOnce({
+      DYNAMIC: 'from-dotenv',
+    });
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          test: {
+            command: 'echo',
+            args: [],
+            env: { STATIC: 'value' },
+            envFromDotenv: ['DYNAMIC'],
+          },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.servers.test.env).toEqual({
+      STATIC: 'value',
+      DYNAMIC: 'from-dotenv',
+    });
+  });
+
+  it('generates mcp__{name}__* allowed tools by default', () => {
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          gmail: { command: 'npx', args: [] },
+          seerr: { command: 'npx', args: [] },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.extraAllowedTools).toContain('mcp__gmail__*');
+    expect(result.extraAllowedTools).toContain('mcp__seerr__*');
+  });
+
+  it('prefixes disallowedTools with mcp__{name}__', () => {
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          gmail: {
+            command: 'npx',
+            args: [],
+            disallowedTools: ['send_email', 'delete_email'],
+          },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.extraDisallowedTools).toContain('mcp__gmail__send_email');
+    expect(result.extraDisallowedTools).toContain('mcp__gmail__delete_email');
+  });
+
+  it('uses custom allowedTools when specified (prefixed)', () => {
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          gmail: {
+            command: 'npx',
+            args: [],
+            allowedTools: ['search_messages', 'read_message'],
+          },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.extraAllowedTools).toEqual([
+      'mcp__gmail__search_messages',
+      'mcp__gmail__read_message',
+    ]);
+    expect(result.extraAllowedTools).not.toContain('mcp__gmail__*');
+  });
+
+  it('skips server with missing command', () => {
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          bad: { command: '', args: [] },
+          good: { command: 'echo', args: ['hi'] },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.servers).not.toHaveProperty('bad');
+    expect(result.servers).toHaveProperty('good');
+  });
+
+  it('resolves per-server mounts (existing paths)', () => {
+    const dir = createMountDir('gmail-creds');
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          gmail: {
+            command: 'npx',
+            args: [],
+            mounts: [
+              {
+                hostPath: dir,
+                containerPath: '/home/node/.gmail-mcp',
+                readWrite: true,
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.mcpMounts).toHaveLength(1);
+    expect(result.mcpMounts[0].containerPath).toBe('/home/node/.gmail-mcp');
+    expect(result.mcpMounts[0].readonly).toBe(false);
+  });
+
+  it('skips per-server mount when path does not exist', () => {
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          gmail: {
+            command: 'npx',
+            args: [],
+            mounts: [
+              {
+                hostPath: '/nonexistent/path',
+                containerPath: '/home/node/.gmail-mcp',
+                readWrite: true,
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.mcpMounts).toHaveLength(0);
+  });
+
+  it('omits env field when no env vars configured', () => {
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          gmail: { command: 'npx', args: ['-y', 'something'] },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.servers.gmail.env).toBeUndefined();
+  });
+
+  it('passes empty string for missing dotenv key', () => {
+    vi.mocked(readEnvFile).mockReturnValueOnce({});
+    writeConfig(
+      validConfig({
+        mcpServers: {
+          test: {
+            command: 'echo',
+            args: [],
+            envFromDotenv: ['MISSING_KEY'],
+          },
+        },
+      }),
+    );
+
+    const result = getConfigMcpServers()!;
+    expect(result.servers.test.env).toEqual({ MISSING_KEY: '' });
   });
 });

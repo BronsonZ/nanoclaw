@@ -111,6 +111,8 @@ export type OnChatMetadata = (
 export interface ContainerConfigFile {
   version: number;
   mounts: ConfigMount[];
+  envFromDotenv?: string[];
+  mcpServers?: Record<string, McpServerConfig>;
   security: {
     extraBlockedPatterns: string[];
     nonMainReadOnly: boolean;
@@ -124,4 +126,22 @@ export interface ConfigMount {
   allGroups?: boolean;
   description?: string;
   contextFile?: string; // filename in ~/.config/nanoclaw/mount-context/
+}
+
+export interface McpServerMount {
+  hostPath: string;
+  containerPath: string;
+  readWrite: boolean;
+}
+
+export interface McpServerConfig {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  envFromDotenv?: string[];
+  mounts?: McpServerMount[];
+  disallowedTools?: string[];
+  allowedTools?: string[];
+  description?: string;
+  contextFile?: string; // filename in ~/.config/nanoclaw/mcp-context/
 }

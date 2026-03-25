@@ -43,6 +43,12 @@ export const MOUNT_CONTEXT_DIR = path.join(
   'nanoclaw',
   'mount-context',
 );
+export const MCP_CONTEXT_DIR = path.join(
+  HOME_DIR,
+  '.config',
+  'nanoclaw',
+  'mcp-context',
+);
 export const SENDER_ALLOWLIST_PATH = path.join(
   HOME_DIR,
   '.config',

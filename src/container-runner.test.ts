@@ -14,6 +14,8 @@ vi.mock('./config.js', () => ({
   DATA_DIR: '/tmp/nanoclaw-test-data',
   GROUPS_DIR: '/tmp/nanoclaw-test-groups',
   IDLE_TIMEOUT: 1800000, // 30min
+  MCP_CONTEXT_DIR: '/tmp/nanoclaw-test-mcp-context',
+  MOUNT_CONTEXT_DIR: '/tmp/nanoclaw-test-mount-context',
   ONECLI_URL: 'http://localhost:10254',
   TIMEZONE: 'America/Los_Angeles',
 }));
@@ -50,6 +52,8 @@ vi.mock('fs', async () => {
 vi.mock('./mount-security.js', () => ({
   validateAdditionalMounts: vi.fn(() => []),
   getConfigMounts: vi.fn(() => null),
+  getConfigMcpServers: vi.fn(() => null),
+  loadContainerConfig: vi.fn(() => null),
 }));
 
 // Mock OneCLI SDK

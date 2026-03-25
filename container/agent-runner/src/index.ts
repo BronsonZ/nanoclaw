@@ -32,6 +32,12 @@ interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  mcpServers?: Record<
+    string,
+    { command: string; args: string[]; env?: Record<string, string> }
+  >;
+  extraAllowedTools?: string[];
+  extraDisallowedTools?: string[];
 }
 
 interface ContainerOutput {
@@ -434,6 +440,70 @@ async function runQuery(
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
 
+  // MCP servers: hardcoded base + config additions (additive, same as mounts)
+  const mcpServersForSdk: Record<
+    string,
+    { command: string; args: string[]; env?: Record<string, string> }
+  > = {
+    // Hardcoded servers (upstream NanoClaw defaults)
+    nanoclaw: {
+      command: 'node',
+      args: [mcpServerPath],
+      env: {
+        NANOCLAW_CHAT_JID: containerInput.chatJid,
+        NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
+        NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+      },
+    },
+    gmail: {
+      command: 'npx',
+      args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
+    },
+    // Config-driven servers stack on top (override hardcoded if same name)
+    ...(containerInput.mcpServers || {}),
+  };
+
+  // Tool lists: hardcoded base + config additions (additive)
+  const allowedTools = [
+    'Bash',
+    'Read',
+    'Write',
+    'Edit',
+    'Glob',
+    'Grep',
+    'WebSearch',
+    'WebFetch',
+    'Task',
+    'TaskOutput',
+    'TaskStop',
+    'TeamCreate',
+    'TeamDelete',
+    'SendMessage',
+    'TodoWrite',
+    'ToolSearch',
+    'Skill',
+    'NotebookEdit',
+    'mcp__nanoclaw__*',
+    'mcp__gmail__*',
+    ...(containerInput.extraAllowedTools || []),
+  ];
+
+  const disallowedTools = [
+    'mcp__gmail__send_email',
+    'mcp__gmail__modify_email',
+    'mcp__gmail__delete_email',
+    'mcp__gmail__batch_modify_emails',
+    'mcp__gmail__batch_delete_emails',
+    'mcp__gmail__create_label',
+    'mcp__gmail__update_label',
+    'mcp__gmail__delete_label',
+    'mcp__gmail__get_or_create_label',
+    'mcp__gmail__create_filter',
+    'mcp__gmail__delete_filter',
+    'mcp__gmail__create_filter_from_template',
+    ...(containerInput.extraDisallowedTools || []),
+  ];
+
   for await (const message of query({
     prompt: stream,
     options: {
@@ -448,81 +518,13 @@ async function runQuery(
             append: globalClaudeMd,
           }
         : undefined,
-      allowedTools: [
-        'Bash',
-        'Read',
-        'Write',
-        'Edit',
-        'Glob',
-        'Grep',
-        'WebSearch',
-        'WebFetch',
-        'Task',
-        'TaskOutput',
-        'TaskStop',
-        'TeamCreate',
-        'TeamDelete',
-        'SendMessage',
-        'TodoWrite',
-        'ToolSearch',
-        'Skill',
-        'NotebookEdit',
-        'mcp__nanoclaw__*',
-        'mcp__gmail__*',
-        'mcp__seerr__*',
-        'mcp__github__*',
-      ],
-      disallowedTools: [
-        'mcp__gmail__send_email',
-        'mcp__gmail__modify_email',
-        'mcp__gmail__delete_email',
-        'mcp__gmail__batch_modify_emails',
-        'mcp__gmail__batch_delete_emails',
-        'mcp__gmail__create_label',
-        'mcp__gmail__update_label',
-        'mcp__gmail__delete_label',
-        'mcp__gmail__get_or_create_label',
-        'mcp__gmail__create_filter',
-        'mcp__gmail__delete_filter',
-        'mcp__gmail__create_filter_from_template',
-        'mcp__github__delete_repository',
-        'mcp__github__fork_repository',
-      ],
+      allowedTools,
+      disallowedTools,
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: ['project', 'user'],
-      mcpServers: {
-        nanoclaw: {
-          command: 'node',
-          args: [mcpServerPath],
-          env: {
-            NANOCLAW_CHAT_JID: containerInput.chatJid,
-            NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
-            NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
-          },
-        },
-        gmail: {
-          command: 'npx',
-          args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
-        },
-        seerr: {
-          command: 'npx',
-          args: ['-y', '@jhomen368/overseerr-mcp'],
-          env: {
-            SEERR_URL: process.env.SEERR_URL || '',
-            SEERR_API_KEY: process.env.SEERR_API_KEY || '',
-          },
-        },
-        github: {
-          command: 'npx',
-          args: ['-y', '@modelcontextprotocol/server-github'],
-          env: {
-            GITHUB_PERSONAL_ACCESS_TOKEN:
-              process.env.GITHUB_PERSONAL_ACCESS_TOKEN || '',
-          },
-        },
-      },
+      mcpServers: mcpServersForSdk,
       hooks: {
         PreCompact: [
           { hooks: [createPreCompactHook(containerInput.assistantName)] },
@@ -582,9 +584,10 @@ async function runQuery(
   return { newSessionId, lastAssistantUuid, closedDuringQuery };
 }
 
-/** Configure git with token-based HTTPS auth and user identity when GITHUB_TOKEN is set. */
+/** Configure git with token-based HTTPS auth and user identity when a GitHub PAT is set. */
 function setupGitConfig(): void {
-  const token = process.env.GITHUB_TOKEN;
+  const token =
+    process.env.GITHUB_PERSONAL_ACCESS_TOKEN || process.env.GITHUB_TOKEN;
   if (!token) return;
   try {
     execSync(

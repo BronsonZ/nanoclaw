@@ -489,6 +489,7 @@ export function getConfigMounts(isMain: boolean): Array<{
   containerPath: string;
   readonly: boolean;
   description?: string;
+  contextFile?: string;
 }> | null {
   const config = loadContainerConfig();
   if (!config) {
@@ -507,6 +508,7 @@ export function getConfigMounts(isMain: boolean): Array<{
     containerPath: string;
     readonly: boolean;
     description?: string;
+    contextFile?: string;
   }> = [];
 
   for (const mount of config.mounts) {
@@ -551,6 +553,7 @@ export function getConfigMounts(isMain: boolean): Array<{
       containerPath: `/workspace/extra/${mount.containerPath}`,
       readonly: effectiveReadonly,
       description: mount.description,
+      contextFile: mount.contextFile,
     });
   }
 

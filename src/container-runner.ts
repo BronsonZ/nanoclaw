@@ -14,6 +14,7 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  MOUNT_CONTEXT_DIR,
   ONECLI_URL,
   TIMEZONE,
 } from './config.js';
@@ -57,6 +58,42 @@ interface VolumeMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
+}
+
+/**
+ * Read a sidecar context file for a mount from ~/.config/nanoclaw/mount-context/.
+ * Returns the file content or null if missing/unreadable.
+ */
+function readMountContext(contextFile: string): string | null {
+  // Strip directory components to prevent path traversal
+  const basename = path.basename(contextFile);
+  if (basename !== contextFile) {
+    logger.warn(
+      { contextFile },
+      'Mount contextFile contains path separators — using basename only',
+    );
+  }
+
+  const fullPath = path.join(MOUNT_CONTEXT_DIR, basename);
+  try {
+    if (!fs.existsSync(fullPath)) {
+      logger.warn(
+        { contextFile: basename, path: fullPath },
+        'Mount context file not found — mount will have description only',
+      );
+      return null;
+    }
+    return fs.readFileSync(fullPath, 'utf-8').trim();
+  } catch (err) {
+    logger.warn(
+      {
+        contextFile: basename,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'Failed to read mount context file',
+    );
+    return null;
+  }
 }
 
 function buildVolumeMounts(
@@ -244,10 +281,19 @@ function buildVolumeMounts(
     const lines = ['# Additional Mounted Directories', ''];
     for (const m of configMounts) {
       const mode = m.readonly ? 'read-only' : 'read-write';
-      const desc = m.description ? ` — ${m.description}` : '';
-      lines.push(`- \`${m.containerPath}\` (${mode})${desc}`);
+      lines.push(`## \`${m.containerPath}\` (${mode})`, '');
+
+      if (m.description) {
+        lines.push(m.description, '');
+      }
+
+      if (m.contextFile) {
+        const context = readMountContext(m.contextFile);
+        if (context) {
+          lines.push(context, '');
+        }
+      }
     }
-    lines.push('');
     fs.writeFileSync(path.join(mountInfoDir, 'CLAUDE.md'), lines.join('\n'));
     mounts.push({
       hostPath: mountInfoDir,

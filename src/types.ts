@@ -123,4 +123,5 @@ export interface ConfigMount {
   readWrite: boolean;
   allGroups?: boolean;
   description?: string;
+  contextFile?: string; // filename in ~/.config/nanoclaw/mount-context/
 }

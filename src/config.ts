@@ -37,6 +37,12 @@ export const CONTAINER_CONFIG_PATH = path.join(
   'nanoclaw',
   'container-config.json',
 );
+export const MOUNT_CONTEXT_DIR = path.join(
+  HOME_DIR,
+  '.config',
+  'nanoclaw',
+  'mount-context',
+);
 export const SENDER_ALLOWLIST_PATH = path.join(
   HOME_DIR,
   '.config',

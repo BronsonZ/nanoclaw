@@ -335,6 +335,37 @@ describe('getConfigMounts', () => {
     expect(result![0].containerPath).toBe('/workspace/extra/data');
   });
 
+  it('passes through contextFile when provided', () => {
+    const dir = createMountDir('vault');
+    writeConfig(
+      validConfig({
+        mounts: [
+          {
+            path: dir,
+            containerPath: 'vault',
+            readWrite: true,
+            contextFile: 'vault-context.md',
+          },
+        ],
+      }),
+    );
+
+    const result = getConfigMounts(true);
+    expect(result![0].contextFile).toBe('vault-context.md');
+  });
+
+  it('contextFile is undefined when not specified', () => {
+    const dir = createMountDir('vault');
+    writeConfig(
+      validConfig({
+        mounts: [{ path: dir, containerPath: 'vault', readWrite: true }],
+      }),
+    );
+
+    const result = getConfigMounts(true);
+    expect(result![0].contextFile).toBeUndefined();
+  });
+
   it('handles multiple mounts with mixed validity', () => {
     const goodDir = createMountDir('good');
     const sshDir = createMountDir('.ssh');

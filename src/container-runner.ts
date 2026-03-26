@@ -339,6 +339,7 @@ function buildVolumeMounts(
     for (const m of configMounts) {
       const mode = m.readonly ? 'read-only' : 'read-write';
       lines.push(`## \`${m.containerPath}\` (${mode})`, '');
+      lines.push(`**Host path:** \`${m.hostPath}\``, '');
 
       if (m.description) {
         lines.push(m.description, '');

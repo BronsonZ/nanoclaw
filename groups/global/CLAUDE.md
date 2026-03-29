@@ -69,40 +69,13 @@ When you receive an email notification (messages starting with `[Email from ...`
 
 ## Message Formatting
 
-Format messages based on the channel you're responding to. Check your group folder name:
+Write standard Markdown. The outbound pipeline automatically converts formatting to each channel's native syntax (bold, italic, links, headings). Code blocks are always protected.
 
-### Slack channels (folder starts with `slack_`)
+### Remaining limitations to be aware of
 
-Use Slack mrkdwn syntax. Run `/slack-formatting` for the full reference. Key rules:
-- `*bold*` (single asterisks)
-- `_italic_` (underscores)
-- `<https://url|link text>` for links (NOT `[text](url)`)
-- `•` bullets (no numbered lists)
-- `:emoji:` shortcodes like `:white_check_mark:`, `:rocket:`
-- `>` for block quotes
-- No `##` headings — use `*Bold text*` instead
-
-### WhatsApp/Telegram (folder starts with `whatsapp_` or `telegram_`)
-
-NanoClaw uses legacy Markdown v1 (`parse_mode: 'Markdown'`). HTML tags are ignored. Falls back to plain text silently if parsing fails.
-
-- ✅ WORKS: `*bold*` (single asterisks, NEVER `**double**`), `_italic_`, `` `inline code` ``, ` ```code blocks``` `, `[link text](url)`
-- ⚠️ RISKY: Underscores in file paths/variable names (e.g. `some_file.ts`) can accidentally trigger italic — wrap in backticks instead
-- ⚠️ RISKY: Mixing multiple formatting elements in one message (especially multiple code blocks + inline backticks together) can trip the parser and fall back to plain text — when in doubt, keep messages simpler or split them up
-- ❌ DOES NOT WORK: HTML tags, underline, strikethrough, spoilers, blockquotes, native tables
-- ❌ DOES NOT WORK: MarkdownV2 syntax (e.g. `||spoiler||`, `__underline__`)
-- `•` bullet points
-- No `##` headings. No `**double stars**`.
-- *Tables:* No native support — use a plain code block with pipes between columns and dashes under the header:
-  ` ``` `
-  `Col 1    | Col 2  | Col 3`
-  `---------|--------|------`
-  `value    | value  | value`
-  ` ``` `
-
-### Discord channels (folder starts with `discord_`)
-
-Standard Markdown works: `**bold**`, `*italic*`, `[links](url)`, `# headings`.
+- **Tables** (WhatsApp/Telegram): No native support — use a plain code block with pipes and dashes
+- **Underscores in paths** (WhatsApp/Telegram): `some_file.ts` outside code blocks can trigger italic — wrap in backticks
+- **Slack extras**: Use `:emoji:` shortcodes (e.g. `:white_check_mark:`), `>` for blockquotes, `•` for bullets
 
 ---
 

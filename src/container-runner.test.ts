@@ -56,6 +56,14 @@ vi.mock('./mount-security.js', () => ({
   loadContainerConfig: vi.fn(() => null),
 }));
 
+// Mock container-runtime
+vi.mock('./container-runtime.js', () => ({
+  CONTAINER_RUNTIME_BIN: 'docker',
+  hostGatewayArgs: () => [],
+  readonlyMountArgs: (h: string, c: string) => ['-v', `${h}:${c}:ro`],
+  stopContainer: vi.fn(),
+}));
+
 // Mock OneCLI SDK
 vi.mock('@onecli-sh/sdk', () => ({
   OneCLI: class {

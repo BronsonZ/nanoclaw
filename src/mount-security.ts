@@ -9,10 +9,9 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import pino from 'pino';
-
 import { CONTAINER_CONFIG_PATH, MOUNT_ALLOWLIST_PATH } from './config.js';
 import { readEnvFile } from './env.js';
+import { logger } from './logger.js';
 import {
   AdditionalMount,
   AllowedRoot,
@@ -21,11 +20,6 @@ import {
   McpServerConfig,
   MountAllowlist,
 } from './types.js';
-
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: { target: 'pino-pretty', options: { colorize: true } },
-});
 
 // Cache the allowlist in memory - only reloads on process restart
 let cachedAllowlist: MountAllowlist | null = null;
@@ -71,7 +65,8 @@ export function loadMountAllowlist(): MountAllowlist | null {
 
   try {
     if (!fs.existsSync(MOUNT_ALLOWLIST_PATH)) {
-      allowlistLoadError = `Mount allowlist not found at ${MOUNT_ALLOWLIST_PATH}`;
+      // Do NOT cache this as an error — file may be created later without restart.
+      // Only parse/structural errors are permanently cached.
       logger.warn(
         { path: MOUNT_ALLOWLIST_PATH },
         'Mount allowlist not found - additional mounts will be BLOCKED. ' +
@@ -220,6 +215,11 @@ function isValidContainerPath(containerPath: string): boolean {
 
   // Must not be empty
   if (!containerPath || containerPath.trim() === '') {
+    return false;
+  }
+
+  // Must not contain colons — prevents Docker -v option injection (e.g., "repo:rw")
+  if (containerPath.includes(':')) {
     return false;
   }
 

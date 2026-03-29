@@ -833,7 +833,15 @@ describe('TelegramChannel', () => {
   // --- setTyping ---
 
   describe('setTyping', () => {
-    it('sends typing action when isTyping is true', async () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('sends typing action immediately when isTyping is true', async () => {
       const opts = createTestOpts();
       const channel = new TelegramChannel('test-token', opts);
       await channel.connect();
@@ -846,7 +854,61 @@ describe('TelegramChannel', () => {
       );
     });
 
-    it('does nothing when isTyping is false', async () => {
+    it('re-sends typing action every 4 seconds', async () => {
+      const opts = createTestOpts();
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      await channel.setTyping('tg:100200300', true);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(4000);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(4000);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(3);
+    });
+
+    it('stops re-sending when setTyping(false) is called', async () => {
+      const opts = createTestOpts();
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      await channel.setTyping('tg:100200300', true);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(1);
+
+      await channel.setTyping('tg:100200300', false);
+
+      vi.advanceTimersByTime(8000);
+      // No additional calls after false
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('resets interval when setTyping(true) called twice for same jid', async () => {
+      const opts = createTestOpts();
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      await channel.setTyping('tg:100200300', true);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(1);
+
+      // Advance partway through first interval
+      vi.advanceTimersByTime(2000);
+
+      // Re-call setTyping(true) — should reset the interval
+      await channel.setTyping('tg:100200300', true);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(2);
+
+      // Advance 3s — old interval would have fired at 4s, but it was cleared
+      vi.advanceTimersByTime(3000);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(2);
+
+      // Advance 1 more second (4s after re-call) — new interval fires
+      vi.advanceTimersByTime(1000);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(3);
+    });
+
+    it('does nothing when isTyping is false and no interval exists', async () => {
       const opts = createTestOpts();
       const channel = new TelegramChannel('test-token', opts);
       await channel.connect();
@@ -871,13 +933,46 @@ describe('TelegramChannel', () => {
       const channel = new TelegramChannel('test-token', opts);
       await channel.connect();
 
-      currentBot().api.sendChatAction.mockRejectedValueOnce(
+      currentBot().api.sendChatAction.mockRejectedValue(
         new Error('Rate limited'),
       );
 
-      await expect(
-        channel.setTyping('tg:100200300', true),
-      ).resolves.toBeUndefined();
+      await channel.setTyping('tg:100200300', true);
+
+      // Should not throw — the .catch() in send() swallows errors
+      vi.advanceTimersByTime(4000);
+      // Interval still fires despite errors
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears typing interval when a message is sent', async () => {
+      const opts = createTestOpts();
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      await channel.setTyping('tg:100200300', true);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(1);
+
+      await channel.sendMessage('tg:100200300', 'Here is the response');
+
+      vi.advanceTimersByTime(8000);
+      // No more typing calls after sending a message
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears typing intervals on disconnect', async () => {
+      const opts = createTestOpts();
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      await channel.setTyping('tg:100200300', true);
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(1);
+
+      await channel.disconnect();
+
+      vi.advanceTimersByTime(8000);
+      // No more typing calls after disconnect
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledTimes(1);
     });
   });
 

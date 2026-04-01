@@ -34,6 +34,7 @@ import {
   getAllChats,
   getAllRegisteredGroups,
   getAllSessions,
+  deleteSession,
   getAllTasks,
   getLastBotMessageTimestamp,
   getMessagesSince,
@@ -264,7 +265,9 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       },
       formatMessages,
       canSenderInteract: (msg) => {
-        const hasTrigger = getTriggerPattern(group.trigger).test(msg.content.trim());
+        const hasTrigger = getTriggerPattern(group.trigger).test(
+          msg.content.trim(),
+        );
         const reqTrigger = !isMainGroup && group.requiresTrigger !== false;
         return (
           isMainGroup ||
@@ -446,6 +449,26 @@ async function runAgent(
     }
 
     if (output.status === 'error') {
+      // Detect stale/corrupt session — clear it so the next retry starts fresh.
+      // The session .jsonl can go missing after a crash mid-write, manual
+      // deletion, or disk-full. The existing backoff in group-queue.ts
+      // handles the retry; we just need to remove the broken session ID.
+      const isStaleSession =
+        sessionId &&
+        output.error &&
+        /no conversation found|ENOENT.*\.jsonl|session.*not found/i.test(
+          output.error,
+        );
+
+      if (isStaleSession) {
+        logger.warn(
+          { group: group.name, staleSessionId: sessionId, error: output.error },
+          'Stale session detected — clearing for next retry',
+        );
+        delete sessions[group.folder];
+        deleteSession(group.folder);
+      }
+
       logger.error(
         { group: group.name, error: output.error },
         'Container agent error',
@@ -511,7 +534,11 @@ async function startMessageLoop(): Promise<void> {
           // --- Session command interception (message loop) ---
           // Scan ALL messages in the batch for a session command.
           const loopCmdMsg = groupMessages.find(
-            (m) => extractSessionCommand(m.content, getTriggerPattern(group.trigger)) !== null,
+            (m) =>
+              extractSessionCommand(
+                m.content,
+                getTriggerPattern(group.trigger),
+              ) !== null,
           );
 
           if (loopCmdMsg) {

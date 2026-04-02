@@ -51,7 +51,7 @@ docker ps --format 'table {{.Names}}\t{{.Ports}}' | grep -v "^NAMES"
 
 ## Caddy Reverse Proxy
 
-Config: `/workspace/extra/docker-stacks/caddy/caddy/Caddyfile`
+Config: `/workspace/extra/docker-stacks/infrastructure/caddy/caddy/Caddyfile`
 Env vars: `MY_PUBLIC_DOMAIN` (bzserver.com), `MY_LOCAL_DOMAIN` (bzserver.lan)
 
 ### Private service (`*.bzserver.lan`)
@@ -155,8 +155,8 @@ To create an entirely new local domain (e.g., `*.claw.lan`):
 ## Checklist
 
 For a new **private** service:
-- [ ] Create compose file in `/workspace/extra/docker-stacks/myapp/`
-- [ ] Start: `cd /workspace/extra/docker-stacks/myapp && docker compose up -d`
+- [ ] Create compose file in `/workspace/extra/docker-stacks/apps/myapp/`
+- [ ] Start: `cd /workspace/extra/docker-stacks/apps/myapp && docker compose up -d`
 - [ ] Add Caddy `http://` block with `import local_only`
 - [ ] Add Pi-hole CNAME: `myapp.bzserver.lan` → `bzserver.lan`
 - [ ] Restart Caddy: `docker restart caddy`

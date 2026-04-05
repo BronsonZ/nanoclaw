@@ -238,6 +238,12 @@ function buildVolumeMounts(
             // Default model for Claude Agent SDK
             // Override via ANTHROPIC_MODEL in .env (applies to all groups)
             ANTHROPIC_MODEL: 'opus',
+            // Disable telemetry, auto-updates, and feedback in containers
+            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+            // Disable /rewind file checkpointing (not used in containers)
+            CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING: '1',
+            // Disable auto-updater (container image is pinned, updates via build.sh)
+            DISABLE_AUTOUPDATER: '1',
           },
         },
         null,

@@ -1,10 +1,8 @@
 ---
 name: deploy-service
 description: >
-  Deploy a new Docker service on the homeserver with Caddy reverse proxy and
-  Pi-hole DNS. Use when asked to set up, deploy, expose, or create a new
-  service, web app, or Docker stack. Also use when adding a Caddy route or
-  DNS record for an existing service.
+  Deploy or expose Docker services on the homeserver. Covers compose setup,
+  Caddy reverse proxy routes, and Pi-hole DNS records — full or partial workflow.
 ---
 
 # Deploy Service
@@ -26,7 +24,7 @@ services:
       - PUID=1000
       - PGID=1000    # some stacks use 1001
     volumes:
-      - ./myapp/config:/config
+      - /home/bzserver/docker-stacks/apps/myapp/config:/config
     ports:
       - "8080:8080"  # only if direct access needed outside Caddy
 networks:
@@ -36,6 +34,7 @@ networks:
 ```
 
 Key rules:
+- **Use absolute host paths in volume mounts** — you run inside a container but the Docker daemon runs on the host. Relative paths (e.g. `./config`) resolve to container paths that don't exist on the host. Always use `/home/bzserver/...` paths.
 - `restart: unless-stopped` on all services
 - `TZ=America/New_York` always
 - `PUID=1000`, `PGID=1000` for LinuxServer.io images
@@ -51,12 +50,23 @@ docker ps --format 'table {{.Names}}\t{{.Ports}}' | grep -v "^NAMES"
 
 ## Caddy Reverse Proxy
 
-Config: `/workspace/extra/docker-stacks/infrastructure/caddy/caddy/Caddyfile`
+Routes are split across files in `/workspace/extra/docker-stacks/infrastructure/caddy/caddy/sites/`:
+
+| File | Contents |
+|------|----------|
+| `apps.caddy` | App services (n8n, HA, lubelogger, etc.) — **add new services here** |
+| `media.caddy` | Media stack (radarr, sonarr, plex, etc.) |
+| `infra.caddy` | Infrastructure (homepage, uptime, portainer, pihole, speedtest) |
+| `public.caddy` | Public HTTPS services (seerr, plex) |
+| `claw.caddy` | NanoClaw websites and dashboard |
+
+The main Caddyfile at `sites/../Caddyfile` just imports these: `import /etc/caddy-sites/*.caddy`. Do not edit it directly.
+
 Env vars: `MY_PUBLIC_DOMAIN` (bzserver.com), `MY_LOCAL_DOMAIN` (bzserver.lan)
 
 ### Private service (`*.bzserver.lan`)
 
-Most services go here. HTTP only, IP-restricted to LAN/Tailscale:
+Most services go here. Add to `apps.caddy`. HTTP only, IP-restricted to LAN/Tailscale:
 
 ```
 http://myapp.{$MY_LOCAL_DOMAIN} {
@@ -75,7 +85,7 @@ http://myapp.{$MY_LOCAL_DOMAIN} {
 
 ### Public service (`*.bzserver.com`)
 
-Rare — only for services friends/family need. HTTPS with automatic Let's Encrypt:
+Rare — only for services friends/family need. Add to `public.caddy`. HTTPS with automatic Let's Encrypt:
 
 ```
 myapp.{$MY_PUBLIC_DOMAIN} {
@@ -157,12 +167,12 @@ To create an entirely new local domain (e.g., `*.claw.lan`):
 For a new **private** service:
 - [ ] Create compose file in `/workspace/extra/docker-stacks/apps/myapp/`
 - [ ] Start: `cd /workspace/extra/docker-stacks/apps/myapp && docker compose up -d`
-- [ ] Add Caddy `http://` block with `import local_only`
+- [ ] Add Caddy `http://` block with `import local_only` to `sites/apps.caddy`
 - [ ] Add Pi-hole CNAME: `myapp.bzserver.lan` → `bzserver.lan`
 - [ ] Restart Caddy: `docker restart caddy`
 - [ ] Verify: `curl -s -H "Host: myapp.bzserver.lan" http://192.168.1.151`
 
 For a new **public** service (add all private steps plus):
-- [ ] Use HTTPS Caddy block (no `http://` prefix, no `local_only`)
+- [ ] Add HTTPS Caddy block to `sites/public.caddy` (no `http://` prefix, no `local_only`)
 - [ ] Ask Bronson to add Cloudflare DNS record
 - [ ] Add Pi-hole CNAME: `myapp.bzserver.com` → `bzserver.com`

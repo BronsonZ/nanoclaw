@@ -47,19 +47,18 @@ Files you create are saved in `/workspace/group/`. Use this for notes, research,
 
 ## Memory
 
-Where to save things you learn:
+You have two persistent memory systems — both survive container restarts:
 
-| What | Where | Why |
-|------|-------|-----|
-| Facts, preferences, user info | `memories/*.md` in your group folder | Detailed storage, loaded on demand |
-| Group-level summary & index | `/workspace/group/CLAUDE.md` | Loaded every session via SDK, keep concise |
-| Past conversations | `conversations/` in your group folder | Searchable history, auto-archived |
+1. **Auto-memory** (SDK-managed) — automatically saves lightweight learnings: feedback, preferences, small facts, corrections. Let it work naturally. Don't duplicate auto-memory entries into explicit files.
+
+2. **`memories/`** (explicit, in your group folder) — for structured reference material too large or important for auto-memory: project research, config docs, detailed indexes, multi-section notes.
 
 Guidelines:
 - Create files in `memories/` for structured data (e.g., `memories/preferences.md`, `memories/projects.md`)
 - Split files larger than 500 lines into folders
-- Keep an index of memory files in `/workspace/group/CLAUDE.md` so you know what exists
+- Keep an index of `memories/` files in `/workspace/group/CLAUDE.md` so you know what exists
 - Keep `/workspace/group/CLAUDE.md` concise — it's loaded every session, so prefer pointers over full content
+- Past conversations are in `conversations/` (auto-archived, searchable)
 
 ## Email Notifications
 

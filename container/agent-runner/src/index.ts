@@ -490,6 +490,10 @@ async function runQuery(
   ];
 
   const disallowedTools = [
+    // Plan mode is unusable in headless/SDK environments — no interactive
+    // terminal to approve ExitPlanMode, which causes the agent to get stuck.
+    'EnterPlanMode',
+    'ExitPlanMode',
     'mcp__gmail__send_email',
     'mcp__gmail__modify_email',
     'mcp__gmail__delete_email',
@@ -505,7 +509,7 @@ async function runQuery(
     ...(containerInput.extraDisallowedTools || []),
   ];
 
-  for await (const message of query({
+  const q = query({
     prompt: stream,
     options: {
       cwd: '/workspace/group',
@@ -532,7 +536,14 @@ async function runQuery(
         ],
       },
     },
-  })) {
+  });
+
+  // Force bypassPermissions in case a resumed session is stuck in plan mode.
+  // EnterPlanMode is now disallowed, but this covers existing stuck sessions.
+  await q.setPermissionMode('bypassPermissions');
+  log('Forced permission mode to bypassPermissions');
+
+  for await (const message of q) {
     messageCount++;
     const msgType =
       message.type === 'system'
@@ -542,6 +553,27 @@ async function runQuery(
 
     if (message.type === 'assistant' && 'uuid' in message) {
       lastAssistantUuid = (message as { uuid: string }).uuid;
+      const content = (message as { message?: { content?: unknown[] } }).message
+        ?.content;
+      if (Array.isArray(content)) {
+        for (const block of content as {
+          type: string;
+          name?: string;
+          input?: Record<string, unknown>;
+        }[]) {
+          if (block.type === 'tool_use' && block.name) {
+            const summary = block.input
+              ? Object.entries(block.input)
+                  .map(([k, v]) => {
+                    const s = typeof v === 'string' ? v : JSON.stringify(v);
+                    return `${k}=${s.length > 100 ? s.slice(0, 100) + '...' : s}`;
+                  })
+                  .join(' ')
+              : '';
+            log(`[tool] ${block.name} ${summary}`);
+          }
+        }
+      }
     }
 
     if (message.type === 'system' && message.subtype === 'init') {

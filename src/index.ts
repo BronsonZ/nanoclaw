@@ -318,6 +318,10 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       if (text) {
         await channel.sendMessage(chatJid, text);
         outputSentToUser = true;
+      } else {
+        // Output was entirely <internal> — no message will be sent,
+        // so stop the typing indicator (sendMessage normally clears it).
+        await channel.setTyping?.(chatJid, false);
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
       resetIdleTimer();

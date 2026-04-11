@@ -302,6 +302,9 @@ After upstream's `skill/channel-formatting` branch was merged, redundant formatt
 ### Restart Skill Rename (`2f9a938`, `0d4fa4f`)
 Added a restart skill, then renamed it from `restart` to `restart-nanoclaw` for clarity.
 
+### Prettier Formatting (`89a2d3d`, `1ab2da5`, `c9f0a6a`)
+Code style cleanup across `src/mount-security.ts`, `src/channels/telegram.ts`, `src/index.ts`, and `src/session-commands.ts`. No functional changes.
+
 ---
 
 ## Change Summary
@@ -317,12 +320,12 @@ Added a restart skill, then renamed it from `restart` to `restart-nanoclaw` for 
 | Task Script Timeout | 1 | Active | 30s → 90s for longer script execution |
 | Container Skills | 5 | Active | Domain knowledge (deploy, weather, email) without code |
 | Config Skills | 1 | Active | Guided MCP/mount setup |
-| Housekeeping | 5 | Active | Formatting, dependencies, gitignore |
+| Housekeeping | 8 | Active | Formatting, dependencies, gitignore |
 | Seerr MCP (hardcoded) | 1 | Superseded | Replaced by declarative config (Section 1) |
 | Task snapshot refresh | 1 | Superseded | Absorbed by upstream (`5ca0633`) |
 | taskMutated removal | 1 | Superseded | Absorbed by upstream |
 
-**Total: 35 commits by BronsonZ** (22 co-authored with Claude, 13 solo).
-**Active: 32 commits** — 3 were superseded (1 by own later work, 2 absorbed by upstream).
+**Total: 36 commits by BronsonZ** (28 co-authored with Claude, 8 solo).
+**Active: 33 commits** — 3 were superseded (1 by own later work, 2 absorbed by upstream).
 
 All active changes follow the principle of **extending upstream defaults rather than replacing them**. The declarative config system, additive mount/MCP stacking, and preserved hardcoded servers minimize upstream divergence and keep merges clean.

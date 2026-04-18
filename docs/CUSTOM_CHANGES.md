@@ -396,6 +396,33 @@ Combined effect on a typical turn: built-in system tools dropped from ~28K to ~2
 
 ---
 
+## 15. Structured JSONL Logging (Dual Output)
+
+**Files:** `src/logger.ts`
+
+### Why
+
+`logs/nanoclaw.log` is human-friendly (ANSI-colored, multi-line indented fields) but unusable for programmatic consumption — the dashboard's Logs tab has to regex-match `ERROR`/`WARN`/`INFO` from decorated strings and has no way to filter by group, container, task, or any other structured field. Changing the text format would break `tail`/`grep`/`journalctl` habits and the `/debug` skill.
+
+### How It Works
+
+`logger.ts` now opens an append-mode write stream to `logs/nanoclaw.jsonl` (overridable via `LOG_JSONL_PATH`) at module load. Inside `log()`, after the level-threshold check, it emits a JSON object per call alongside the existing ANSI text write:
+
+```json
+{"ts":"2026-04-18T16:47:13.807Z","level":"info","pid":1078200,"msg":"Spawning container agent","fields":{"group":"telegram_main","containerName":"...","mountCount":16,"isMain":true}}
+```
+
+Error objects passed as `err` (or any `Error` value) are serialized to `{type, message, stack}` instead of being stringified generically. Stream-open failures and JSON-stringify failures are swallowed — the logger never crashes the process.
+
+### System Implications
+
+- **Text log unchanged.** Both files fill in lockstep; removing one does not affect the other.
+- **Append-mode stream is reopened on module load** so systemd `Restart=` naturally recovers after a crash.
+- **Dashboard pairs with this.** `claw-dashboard` consumes `nanoclaw.jsonl` via `/api/structured-logs` and an SSE tick that emits only newly-appended entries (offset-tracked, not mtime-tracked). Text logs remain visible via the Raw view on the Logs tab.
+- **No rotation.** Both `nanoclaw.log` and `nanoclaw.jsonl` will grow without bound — an existing gap, not a new one. Follow-up: add a size-capped rotator (logrotate unit or in-process wrapper).
+
+---
+
 ## Change Summary
 
 | Area | Commits | Status | Key Benefit |
@@ -413,6 +440,7 @@ Combined effect on a typical turn: built-in system tools dropped from ~28K to ~2
 | `/clear` Command | 1 | Active | Host-side conversation reset without restart |
 | `/context` Command | 1 | Active | Per-turn context-usage snapshot, reported on demand |
 | Context-Window Tuning | 1 | Active | Larger window, xhigh effort, 1M model flow fix, tool trim |
+| Structured JSONL Logging | 1 | Active | Dual-writes `logs/nanoclaw.jsonl` for dashboard consumption; text log unchanged |
 | Seerr MCP (hardcoded) | 1 | Superseded | Replaced by declarative config (Section 1) |
 | Task snapshot refresh | 1 | Superseded | Absorbed by upstream (`5ca0633`) |
 | taskMutated removal | 1 | Superseded | Absorbed by upstream |

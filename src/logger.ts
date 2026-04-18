@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 const LEVELS = { debug: 20, info: 30, warn: 40, error: 50, fatal: 60 } as const;
 type Level = keyof typeof LEVELS;
 
@@ -15,6 +18,64 @@ const FULL_RESET = '\x1b[0m';
 
 const threshold =
   LEVELS[(process.env.LOG_LEVEL as Level) || 'info'] ?? LEVELS.info;
+
+const JSONL_PATH =
+  process.env.LOG_JSONL_PATH ??
+  path.join(process.cwd(), 'logs', 'nanoclaw.jsonl');
+
+let jsonlStream: fs.WriteStream | null = null;
+try {
+  fs.mkdirSync(path.dirname(JSONL_PATH), { recursive: true });
+  jsonlStream = fs.createWriteStream(JSONL_PATH, { flags: 'a' });
+  jsonlStream.on('error', () => {
+    jsonlStream = null;
+  });
+} catch {
+  jsonlStream = null;
+}
+
+function jsonifyErr(err: unknown): unknown {
+  if (err instanceof Error) {
+    return {
+      type: err.constructor.name,
+      message: err.message,
+      stack: err.stack,
+    };
+  }
+  return err;
+}
+
+function jsonifyFields(
+  fields: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) {
+    out[k] = k === 'err' || v instanceof Error ? jsonifyErr(v) : v;
+  }
+  return out;
+}
+
+function writeJsonl(
+  level: Level,
+  message: string,
+  fields?: Record<string, unknown>,
+): void {
+  if (!jsonlStream) return;
+  try {
+    const entry: Record<string, unknown> = {
+      ts: new Date().toISOString(),
+      level,
+      pid: process.pid,
+      msg: message,
+    };
+    if (fields && Object.keys(fields).length) {
+      entry.fields = jsonifyFields(fields);
+    }
+    jsonlStream.write(JSON.stringify(entry) + '\n');
+  } catch {
+    // never let the logger crash the process
+  }
+}
 
 function formatErr(err: unknown): string {
   if (err instanceof Error) {
@@ -46,6 +107,11 @@ function log(
   msg?: string,
 ): void {
   if (LEVELS[level] < threshold) return;
+  if (typeof dataOrMsg === 'string') {
+    writeJsonl(level, dataOrMsg);
+  } else {
+    writeJsonl(level, msg ?? '', dataOrMsg);
+  }
   const tag = `${COLORS[level]}${level.toUpperCase()}${level === 'fatal' ? FULL_RESET : RESET}`;
   const stream = LEVELS[level] >= LEVELS.warn ? process.stderr : process.stdout;
   if (typeof dataOrMsg === 'string') {

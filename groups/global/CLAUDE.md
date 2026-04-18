@@ -49,16 +49,37 @@ Files you create are saved in `/workspace/group/`. Use this for notes, research,
 
 You have two persistent memory systems — both survive container restarts:
 
-1. **Auto-memory** (SDK-managed) — automatically saves lightweight learnings: feedback, preferences, small facts, corrections. Let it work naturally. Don't duplicate auto-memory entries into explicit files.
+1. **Auto-memory** (SDK-managed) — lightweight learnings: feedback, preferences, small facts, corrections, pointers to external systems.
+2. **`memories/`** (explicit, in your group folder) — structured reference material too large for auto-memory: project research, config docs, detailed indexes.
 
-2. **`memories/`** (explicit, in your group folder) — for structured reference material too large or important for auto-memory: project research, config docs, detailed indexes, multi-section notes.
+### Save proactively
 
-Guidelines:
-- Create files in `memories/` for structured data (e.g., `memories/preferences.md`, `memories/projects.md`)
-- Split files larger than 500 lines into folders
-- Keep an index of `memories/` files in `/workspace/group/CLAUDE.md` so you know what exists
-- Keep `/workspace/group/CLAUDE.md` concise — it's loaded every session, so prefer pointers over full content
-- Past conversations are in `conversations/` (auto-archived, searchable)
+Write to memory on your own initiative — the user should rarely have to say "remember this." Save in the same turn the moment happens, not later.
+
+**Save when:**
+- The user corrects your approach ("don't do X", "always Y") → feedback memory, include *why*
+- The user confirms a non-obvious choice you made → feedback memory, so you repeat the pattern
+- You learn a new fact about Bronson, his work, family, tools, or preferences not already captured → relevant `memories/` file or auto-memory
+- A project decision, deadline, or motivation comes up that will outlive this conversation → project memory with **Why:** and **How to apply:** lines
+- The user points at an external system (dashboard URL, Linear project, Slack channel, config path) → reference memory
+- You discover a gotcha or non-obvious behavior in a tool/integration → `memories/` file or auto-memory
+
+**Don't save:**
+- Anything already in `CLAUDE.md`, the index, or an existing `memories/` file — update instead of duplicating
+- Ephemeral task state or one-off command output
+- Code patterns derivable by re-reading the repo
+- Anything the user asked you to forget
+
+> *Example*: User says "just commit straight to main for the dashboard repo — it's only me touching it." → save a feedback memory: *"Dashboard repo: commit directly to main, no PR flow. Why: solo project, PRs add friction. How to apply: skip branch/PR steps when working in that repo."*
+
+### How to save
+- **Auto-memory**: call the memory tool — no ceremony. One memory per fact.
+- **`memories/`**: create or edit a file under `/workspace/group/memories/`, then add a one-line pointer to the Memory Index in `/workspace/group/CLAUDE.md`. Split files >500 lines into folders. Keep `CLAUDE.md` concise — it loads every session, so prefer pointers over full content.
+
+### Before relying on a memory
+Memories can go stale. If one names a file, flag, URL, or person, verify it still exists before acting on it. If it's wrong, update or delete it instead of working around it.
+
+Past conversations are in `conversations/` (auto-archived, searchable) if you need to recover context that wasn't memorialized.
 
 ## Email Notifications
 

@@ -257,6 +257,29 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       clearSession: () => {
         delete sessions[group.folder];
         deleteSession(group.folder);
+        try {
+          fs.unlinkSync(
+            path.join(GROUPS_DIR, group.folder, 'context-usage.json'),
+          );
+        } catch {
+          /* ignore — no snapshot to delete */
+        }
+      },
+      getContextSnapshot: () => {
+        const snapPath = path.join(
+          GROUPS_DIR,
+          group.folder,
+          'context-usage.json',
+        );
+        try {
+          const raw = fs.readFileSync(snapPath, 'utf8');
+          return { ok: true, snapshot: JSON.parse(raw) };
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+            return { ok: false, reason: 'missing' };
+          }
+          return { ok: false, reason: 'parse-error' };
+        }
       },
     },
   });

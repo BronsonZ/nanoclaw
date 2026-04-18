@@ -133,6 +133,23 @@ function log(message: string): void {
   console.error(`[agent-runner] ${message}`);
 }
 
+const CONTEXT_SNAPSHOT_PATH = '/workspace/group/context-usage.json';
+
+function writeContextSnapshot(
+  usage: Record<string, unknown>,
+  sessionId: string | undefined,
+): void {
+  const snapshot = {
+    schemaVersion: 1,
+    capturedAt: new Date().toISOString(),
+    sessionId,
+    ...usage,
+  };
+  const tmp = `${CONTEXT_SNAPSHOT_PATH}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(snapshot, null, 2));
+  fs.renameSync(tmp, CONTEXT_SNAPSHOT_PATH);
+}
+
 function getSessionSummary(
   sessionId: string,
   transcriptPath: string,
@@ -477,13 +494,15 @@ async function runQuery(
     'Task',
     'TaskOutput',
     'TaskStop',
-    'TeamCreate',
-    'TeamDelete',
+    // Agent teams (persistent multi-agent) disabled — NanoClaw runs single-agent.
+    // Task-based subagents (Explore/Plan/etc.) remain available above.
+    // 'TeamCreate',
+    // 'TeamDelete',
     'SendMessage',
     'TodoWrite',
     'ToolSearch',
     'Skill',
-    'NotebookEdit',
+    // 'NotebookEdit',  // removed — unused in NanoClaw's workflows (no Jupyter), frees ~tokens from system tools
     'mcp__nanoclaw__*',
     'mcp__gmail__*',
     ...(containerInput.extraAllowedTools || []),
@@ -516,6 +535,7 @@ async function runQuery(
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
       resumeSessionAt: resumeAt,
+      effort: 'xhigh',
       systemPrompt: globalClaudeMd
         ? {
             type: 'preset' as const,
@@ -607,6 +627,21 @@ async function runQuery(
         result: textResult || null,
         newSessionId,
       });
+
+      // Capture context usage while the SDK transport is still live.
+      // After the loop exits, the close sentinel may have shut it down.
+      try {
+        const usage = await q.getContextUsage();
+        writeContextSnapshot(
+          usage as unknown as Record<string, unknown>,
+          newSessionId,
+        );
+        log(
+          `Context snapshot written: ${usage.totalTokens}/${usage.maxTokens} (${Math.round(usage.percentage)}%)`,
+        );
+      } catch (err) {
+        log(`getContextUsage failed: ${(err as Error).message}`);
+      }
     }
   }
 
@@ -614,6 +649,7 @@ async function runQuery(
   log(
     `Query done. Messages: ${messageCount}, results: ${resultCount}, lastAssistantUuid: ${lastAssistantUuid || 'none'}, closedDuringQuery: ${closedDuringQuery}`,
   );
+
   return { newSessionId, lastAssistantUuid, closedDuringQuery };
 }
 
@@ -726,7 +762,7 @@ async function main(): Promise<void> {
   // No real secrets exist in the container environment.
   const sdkEnv: Record<string, string | undefined> = {
     ...process.env,
-    CLAUDE_CODE_AUTO_COMPACT_WINDOW: '165000',
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW: '300000',
   };
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));

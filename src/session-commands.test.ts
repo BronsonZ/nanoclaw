@@ -1,11 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   extractSessionCommand,
+  formatContextSnapshot,
+  formatContextSnapshotFull,
   handleSessionCommand,
   isSessionCommandAllowed,
 } from './session-commands.js';
 import type { NewMessage } from './types.js';
-import type { SessionCommandDeps } from './session-commands.js';
+import type {
+  ContextSnapshot,
+  SessionCommandDeps,
+} from './session-commands.js';
 
 describe('extractSessionCommand', () => {
   const trigger = /^@Andy\b/i;
@@ -63,6 +68,38 @@ describe('extractSessionCommand', () => {
   it('is case-sensitive for /clear', () => {
     expect(extractSessionCommand('/Clear', trigger)).toBeNull();
   });
+
+  it('detects bare /context', () => {
+    expect(extractSessionCommand('/context', trigger)).toBe('/context');
+  });
+
+  it('detects /context with trigger prefix', () => {
+    expect(extractSessionCommand('@Andy /context', trigger)).toBe('/context');
+  });
+
+  it('rejects /context with extra text', () => {
+    expect(extractSessionCommand('/context please', trigger)).toBeNull();
+  });
+
+  it('rejects partial /context matches', () => {
+    expect(extractSessionCommand('/contextual', trigger)).toBeNull();
+  });
+
+  it('detects /context full', () => {
+    expect(extractSessionCommand('/context full', trigger)).toBe(
+      '/context full',
+    );
+  });
+
+  it('detects /context full with trigger prefix', () => {
+    expect(extractSessionCommand('@Andy /context full', trigger)).toBe(
+      '/context full',
+    );
+  });
+
+  it('rejects unknown /context subcommand', () => {
+    expect(extractSessionCommand('/context verbose', trigger)).toBeNull();
+  });
 });
 
 describe('isSessionCommandAllowed', () => {
@@ -110,6 +147,37 @@ function makeDeps(
     formatMessages: vi.fn().mockReturnValue('<formatted>'),
     canSenderInteract: vi.fn().mockReturnValue(true),
     clearSession: vi.fn(),
+    getContextSnapshot: vi
+      .fn()
+      .mockReturnValue({ ok: false, reason: 'missing' }),
+    ...overrides,
+  };
+}
+
+function makeSnapshot(
+  overrides: Partial<ContextSnapshot> = {},
+): ContextSnapshot {
+  return {
+    schemaVersion: 1,
+    capturedAt: new Date().toISOString(),
+    sessionId: 'sess-1',
+    model: 'claude-opus-4-7[1m]',
+    totalTokens: 45231,
+    maxTokens: 250000,
+    rawMaxTokens: 1000000,
+    percentage: 18.09,
+    autoCompactThreshold: 250000,
+    isAutoCompactEnabled: true,
+    categories: [
+      { name: 'messages', tokens: 23000 },
+      { name: 'mcp tools', tokens: 12500 },
+      { name: 'system prompt', tokens: 5100 },
+      { name: 'skills', tokens: 2800 },
+      { name: 'memory files', tokens: 1700 },
+      { name: 'empty', tokens: 0 },
+    ],
+    mcpTools: [],
+    memoryFiles: [],
     ...overrides,
   };
 }
@@ -360,5 +428,162 @@ describe('handleSessionCommand', () => {
     expect(result).toEqual({ handled: true, success: true });
     expect(deps.clearSession).toHaveBeenCalledTimes(1);
     expect(deps.sendMessage).toHaveBeenCalledWith('Conversation cleared.');
+  });
+
+  it('/context sends formatted snapshot when available', async () => {
+    const snapshot = makeSnapshot();
+    const deps = makeDeps({
+      getContextSnapshot: vi.fn().mockReturnValue({ ok: true, snapshot }),
+    });
+    const result = await handleSessionCommand({
+      missedMessages: [makeMsg('/context')],
+      isMainGroup: true,
+      groupName: 'test',
+      triggerPattern: trigger,
+      timezone: 'UTC',
+      deps,
+    });
+    expect(result).toEqual({ handled: true, success: true });
+    expect(deps.runAgent).not.toHaveBeenCalled();
+    expect(deps.sendMessage).toHaveBeenCalledTimes(1);
+    const sent = (deps.sendMessage as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string;
+    expect(sent).toContain('Context: 45,231 / 250,000 tokens (18%)');
+    expect(sent).toContain('Model: `claude-opus-4-7[1m]`');
+    expect(sent).toContain('messages: 23,000');
+    expect(deps.advanceCursor).toHaveBeenCalledWith('100');
+  });
+
+  it('/context reports missing snapshot', async () => {
+    const deps = makeDeps({
+      getContextSnapshot: vi
+        .fn()
+        .mockReturnValue({ ok: false, reason: 'missing' }),
+    });
+    const result = await handleSessionCommand({
+      missedMessages: [makeMsg('/context')],
+      isMainGroup: true,
+      groupName: 'test',
+      triggerPattern: trigger,
+      timezone: 'UTC',
+      deps,
+    });
+    expect(result).toEqual({ handled: true, success: true });
+    expect(deps.sendMessage).toHaveBeenCalledWith(
+      'No context snapshot yet — send a message first.',
+    );
+    expect(deps.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('/context reports parse error', async () => {
+    const deps = makeDeps({
+      getContextSnapshot: vi
+        .fn()
+        .mockReturnValue({ ok: false, reason: 'parse-error' }),
+    });
+    const result = await handleSessionCommand({
+      missedMessages: [makeMsg('/context')],
+      isMainGroup: true,
+      groupName: 'test',
+      triggerPattern: trigger,
+      timezone: 'UTC',
+      deps,
+    });
+    expect(result).toEqual({ handled: true, success: true });
+    expect(deps.sendMessage).toHaveBeenCalledWith(
+      'Context snapshot is unreadable. Try again after the next turn.',
+    );
+  });
+
+  it('denies /context from untrusted sender in non-main group', async () => {
+    const deps = makeDeps();
+    const result = await handleSessionCommand({
+      missedMessages: [makeMsg('/context', { is_from_me: false })],
+      isMainGroup: false,
+      groupName: 'test',
+      triggerPattern: trigger,
+      timezone: 'UTC',
+      deps,
+    });
+    expect(result).toEqual({ handled: true, success: true });
+    expect(deps.sendMessage).toHaveBeenCalledWith(
+      'Session commands require admin access.',
+    );
+    expect(deps.getContextSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('/context full sends expanded snapshot', async () => {
+    const snapshot = makeSnapshot({
+      mcpTools: [
+        {
+          name: 'mcp__nanoclaw__schedule_task',
+          serverName: 'nanoclaw',
+          tokens: 1275,
+          isLoaded: false,
+        },
+      ],
+      memoryFiles: [
+        { path: '/workspace/group/CLAUDE.md', tokens: 2959, type: 'Project' },
+      ],
+      apiUsage: {
+        input_tokens: 100,
+        output_tokens: 50,
+        cache_creation_input_tokens: 5000,
+        cache_read_input_tokens: 80000,
+      },
+      systemTools: [
+        { name: 'Bash', tokens: 4200 },
+        { name: 'Read', tokens: 1500 },
+      ],
+      systemPromptSections: [
+        { name: 'Core identity', tokens: 3200 },
+        { name: 'Global CLAUDE.md', tokens: 7700 },
+      ],
+    });
+    const deps = makeDeps({
+      getContextSnapshot: vi.fn().mockReturnValue({ ok: true, snapshot }),
+    });
+    const result = await handleSessionCommand({
+      missedMessages: [makeMsg('/context full')],
+      isMainGroup: true,
+      groupName: 'test',
+      triggerPattern: trigger,
+      timezone: 'UTC',
+      deps,
+    });
+    expect(result).toEqual({ handled: true, success: true });
+    const sent = (deps.sendMessage as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string;
+    expect(sent).toContain('Top MCP tools:');
+    expect(sent).toContain('`mcp__nanoclaw__schedule_task`: 1,275 (deferred)');
+    expect(sent).toContain('Memory files:');
+    expect(sent).toContain('`/workspace/group/CLAUDE.md`: 2,959');
+    expect(sent).toContain('Last-turn API usage:');
+    expect(sent).toContain('cache read: 80,000');
+    expect(sent).toContain('System tools:');
+    expect(sent).toContain('`Bash`: 4,200');
+    expect(sent).toContain('System prompt sections:');
+    expect(sent).toContain('Global CLAUDE.md: 7,700');
+  });
+});
+
+describe('formatContextSnapshot', () => {
+  it('renders a stable multi-line summary', () => {
+    const snap = makeSnapshot({
+      capturedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+    });
+    const text = formatContextSnapshot(snap);
+    expect(text).toContain('Context: 45,231 / 250,000 tokens (18%)');
+    expect(text).toContain('Model: `claude-opus-4-7[1m]`');
+    expect(text).toContain('Auto-compact at: 250,000');
+    expect(text).toContain('Top categories:');
+    expect(text).toContain('messages: 23,000');
+    // Zero-token category is excluded.
+    expect(text).not.toContain('empty:');
+  });
+
+  it('omits auto-compact line when threshold is absent', () => {
+    const snap = makeSnapshot({ autoCompactThreshold: undefined });
+    expect(formatContextSnapshot(snap)).not.toContain('Auto-compact at');
   });
 });

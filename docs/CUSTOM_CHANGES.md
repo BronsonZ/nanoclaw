@@ -343,6 +343,59 @@ The next message then calls `query()` with `resume: undefined` → SDK starts a 
 
 ---
 
+## 13. `/context` Session Command
+
+**Files:** `container/agent-runner/src/index.ts`, `src/session-commands.ts`, `src/session-commands.test.ts`, `src/index.ts`
+
+### Why
+
+With a 300K-token auto-compact window on Opus 4.7 1M, there's no easy way to see how full the context actually is before compaction fires. `/context` reports current usage on demand from Telegram, and `/context full` exposes the detailed breakdown.
+
+### How It Works
+
+Two-part design:
+
+1. **Capture (inside container).** Inside the main `runQuery` result handler in the agent-runner, call `q.getContextUsage()` on the SDK Query object and atomically write a snapshot to `/workspace/group/context-usage.json` (tmp + rename). Capture must happen while the SDK transport is live — calling it after the for-await loop completes fails with `ProcessTransport is not ready for writing` because the close sentinel may have shut the transport down. Best-effort — any throw is logged and swallowed. The snapshot wholesale-dumps the SDK's full `SDKControlGetContextUsageResponse` via spread; metadata (`schemaVersion`, `capturedAt`, `sessionId`) layers on top.
+
+2. **Read (host-side).** `extractSessionCommand` recognizes `/context` and `/context full`. `handleSessionCommand` calls a new `getContextSnapshot` dep which reads the snapshot file from `groups/{folder}/context-usage.json` and returns a discriminated union (`ok | missing | parse-error`). On success it sends a formatted summary — `/context` gives a compact view (total/max tokens, percentage, model, auto-compact threshold, top 5 categories), `/context full` dumps the expanded breakdown (all categories, top 10 MCP tools with loaded/deferred status, memory files, system tools / prompt sections when the SDK populates them, skills, last-turn API usage). No agent invocation, no typing indicator.
+
+Model and tool names are wrapped in backticks in the rendered output so Telegram's markdown parser doesn't eat `[1m]` brackets or `__double__` underscores in tool names.
+
+**Symmetry with `/clear`:** the `clearSession` dep now also `unlink`s the snapshot file, so `/context` right after `/clear` reports "No context snapshot yet — send a message first."
+
+**Trust model** identical to `/compact` / `/clear`: main group or `is_from_me`. Reuses `isSessionCommandAllowed`.
+
+### System Implications
+
+- `getContextUsage()` is a local computation over the SDK's in-memory message ledger — no network call, no stream interference.
+- Snapshot is overwritten each turn; no history is kept. Timeline tracking is out of scope.
+- Snapshot file includes `schemaVersion: 1` for future shape changes. Some SDK fields (`systemTools`, `systemPromptSections`, `deferredBuiltinTools`) are captured but empty in v0.2.114 — the SDK simply doesn't populate them in our usage pattern. Will fill automatically if a future SDK version starts returning them.
+- Writes land in the group folder (`groups/{folder}/`), which is already rw-mounted to `/workspace/group` — no new mounts needed.
+
+---
+
+## 14. Context-Window Tuning
+
+**Files:** `container/agent-runner/src/index.ts`, `src/container-runner.ts`
+
+Several coordinated tweaks to reduce per-turn prompt overhead and raise the effective usable context:
+
+- **`CLAUDE_CODE_AUTO_COMPACT_WINDOW = 300000`** (was 165000). The SDK clamps this to `min(model_max, configured)`, so on plain Opus 4.7 (200K) it has no effect; on the `[1m]` variant the window is honored. Raising the window defers compaction and preserves more continuity.
+
+- **`effort: 'xhigh'`** set on the main `query()` call. Anthropic's recommended effort level for Opus 4.7 coding tasks. Default is `'high'`.
+
+- **`ANTHROPIC_MODEL` hardcode removed from per-group `settings.json` generator.** Previously the agent-runner wrote `env.ANTHROPIC_MODEL: 'opus'` to every group's `settings.json`, which silently overrode the docker `-e ANTHROPIC_MODEL=opus[1m]` env var (CLI settings take precedence over process env). This was clamping the session to plain `claude-opus-4-7` (200K) even when `.env` asked for the 1M variant. Existing stale `data/sessions/*/.claude/settings.json` files must be removed after updating — they regenerate cleanly on next container spawn.
+
+- **Tool list trimmed in `allowedTools`:**
+  - `NotebookEdit` commented out — NanoClaw has no Jupyter workflows.
+  - `TeamCreate` / `TeamDelete` commented out — persistent agent-teams feature unused.
+  - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` flag removed from `settings.json` generator for the same reason.
+  - `Task` / `TaskOutput` / `TaskStop` **retained** — these power general subagent spawning (Explore, Plan, etc.), which is unrelated to the experimental "teams" feature.
+
+Combined effect on a typical turn: built-in system tools dropped from ~28K to ~24K; the 1M context variant is actually active; auto-compact fires at 267K (300K window minus 33K safety buffer) instead of at 165K.
+
+---
+
 ## Change Summary
 
 | Area | Commits | Status | Key Benefit |
@@ -358,6 +411,8 @@ The next message then calls `query()` with `resume: undefined` → SDK starts a 
 | Config Skills | 1 | Active | Guided MCP/mount setup |
 | Housekeeping | 8 | Active | Formatting, dependencies, gitignore |
 | `/clear` Command | 1 | Active | Host-side conversation reset without restart |
+| `/context` Command | 1 | Active | Per-turn context-usage snapshot, reported on demand |
+| Context-Window Tuning | 1 | Active | Larger window, xhigh effort, 1M model flow fix, tool trim |
 | Seerr MCP (hardcoded) | 1 | Superseded | Replaced by declarative config (Section 1) |
 | Task snapshot refresh | 1 | Superseded | Absorbed by upstream (`5ca0633`) |
 | taskMutated removal | 1 | Superseded | Absorbed by upstream |

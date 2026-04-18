@@ -235,18 +235,15 @@ function buildVolumeMounts(
       JSON.stringify(
         {
           env: {
-            // Enable agent swarms (subagent orchestration)
+            // Agent swarms orchestration disabled — NanoClaw runs single-agent.
             // https://code.claude.com/docs/en/agent-teams#orchestrate-teams-of-claude-code-sessions
-            CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+            // CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
             // Load CLAUDE.md from additional mounted directories
             // https://code.claude.com/docs/en/memory#load-memory-from-additional-directories
             CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
             // Enable Claude's memory feature (persists user preferences between sessions)
             // https://code.claude.com/docs/en/memory#manage-auto-memory
             CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
-            // Default model for Claude Agent SDK
-            // Override via ANTHROPIC_MODEL in .env (applies to all groups)
-            ANTHROPIC_MODEL: 'opus',
             // Disable telemetry, auto-updates, and feedback in containers
             CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
             // Disable /rewind file checkpointing (not used in containers)

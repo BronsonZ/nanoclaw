@@ -307,6 +307,42 @@ Code style cleanup across `src/mount-security.ts`, `src/channels/telegram.ts`, `
 
 ---
 
+## 12. `/clear` Session Command
+
+**Commits:** `2886037`
+**Files:** `src/session-commands.ts`, `src/session-commands.test.ts`, `src/index.ts`
+
+### Why
+
+Upstream ships `/compact` (from the `add-compact` skill), which explicitly leaves `/clear` unbuilt as a destructive counterpart. Before this, resetting conversation context required restarting the service or editing the SQLite `sessions` table by hand.
+
+### How It Works
+
+`/clear` is handled **entirely host-side** — it never reaches the container. `extractSessionCommand` recognizes it alongside `/compact`; `handleSessionCommand` branches to call a new `clearSession` dep, send `"Conversation cleared."`, and advance the cursor. No pre-command processing, no `runAgent` call.
+
+`clearSession` reuses the two-line idiom already at `src/index.ts:449-450` (from SDK stale-session recovery):
+
+```ts
+delete sessions[group.folder];
+deleteSession(group.folder);
+```
+
+The next message then calls `query()` with `resume: undefined` → SDK starts a fresh conversation, and the new session_id is persisted via the existing `wrappedOnOutput` path.
+
+**Why not forward to the SDK like `/compact`?** Per the [SDK slash-commands docs](https://code.claude.com/docs/en/agent-sdk/slash-commands.md), `/clear` is not dispatchable through the SDK — forwarding it would be treated as plain text. The recommended pattern is exactly what host-side deletion achieves: end the current session, start a new one.
+
+**Trust model** identical to `/compact`: main group or `is_from_me`. Reuses `isSessionCommandAllowed`.
+
+**No archival.** The old transcript JSONL stays on disk and is resumable via the SDK's `resume` option. For a readable archive, run `/compact` first, then `/clear`.
+
+### System Implications
+
+- **Scheduled tasks unaffected.** `scheduled_tasks` / `task_run_log` have no FK to `sessions`. After `/clear`, the next speaker (human or `context_mode: 'group'` task) establishes the new session_id.
+- **Survives service restart.** Both the in-memory eviction and the DB delete are required — `getAllSessions()` at `src/index.ts:97` would otherwise reload the stale session_id on restart and silently undo the clear.
+- **Pre-`/clear` messages in the same polling batch are dropped** (vs `/compact`, which processes them first). Running them against a session we're about to wipe would be wasted work.
+
+---
+
 ## Change Summary
 
 | Area | Commits | Status | Key Benefit |
@@ -321,11 +357,12 @@ Code style cleanup across `src/mount-security.ts`, `src/channels/telegram.ts`, `
 | Container Skills | 5 | Active | Domain knowledge (deploy, weather, email) without code |
 | Config Skills | 1 | Active | Guided MCP/mount setup |
 | Housekeeping | 8 | Active | Formatting, dependencies, gitignore |
+| `/clear` Command | 1 | Active | Host-side conversation reset without restart |
 | Seerr MCP (hardcoded) | 1 | Superseded | Replaced by declarative config (Section 1) |
 | Task snapshot refresh | 1 | Superseded | Absorbed by upstream (`5ca0633`) |
 | taskMutated removal | 1 | Superseded | Absorbed by upstream |
 
-**Total: 36 commits by BronsonZ** (28 co-authored with Claude, 8 solo).
-**Active: 33 commits** — 3 were superseded (1 by own later work, 2 absorbed by upstream).
+**Total: 37 commits by BronsonZ** (29 co-authored with Claude, 8 solo).
+**Active: 34 commits** — 3 were superseded (1 by own later work, 2 absorbed by upstream).
 
 All active changes follow the principle of **extending upstream defaults rather than replacing them**. The declarative config system, additive mount/MCP stacking, and preserved hardcoded servers minimize upstream divergence and keep merges clean.

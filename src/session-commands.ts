@@ -3,7 +3,7 @@ import { logger } from './logger.js';
 
 /**
  * Extract a session slash command from a message, stripping the trigger prefix if present.
- * Returns the slash command (e.g., '/compact') or null if not a session command.
+ * Returns the slash command (e.g., '/compact', '/clear') or null if not a session command.
  */
 export function extractSessionCommand(
   content: string,
@@ -12,6 +12,7 @@ export function extractSessionCommand(
   let text = content.trim();
   text = text.replace(triggerPattern, '').trim();
   if (text === '/compact') return '/compact';
+  if (text === '/clear') return '/clear';
   return null;
 }
 
@@ -45,6 +46,8 @@ export interface SessionCommandDeps {
   formatMessages: (msgs: NewMessage[], timezone: string) => string;
   /** Whether the denied sender would normally be allowed to interact (for denial messages). */
   canSenderInteract: (msg: NewMessage) => boolean;
+  /** Clear the group's session pointer (in-memory + DB). Used by /clear. */
+  clearSession: () => void;
 }
 
 function resultToText(result: string | object | null | undefined): string {
@@ -97,8 +100,18 @@ export async function handleSessionCommand(opts: {
     return { handled: true, success: true };
   }
 
-  // AUTHORIZED: process pre-compact messages first, then run the command
+  // AUTHORIZED
   logger.info({ group: groupName, command }, 'Session command');
+
+  // /clear is handled entirely host-side: drop the session pointer so the next
+  // query() starts fresh. No pre-command processing (those messages would run
+  // against the session we're about to wipe). No agent invocation.
+  if (command === '/clear') {
+    deps.clearSession();
+    await deps.sendMessage('Conversation cleared.');
+    deps.advanceCursor(cmdMsg.timestamp);
+    return { handled: true, success: true };
+  }
 
   const cmdIndex = missedMessages.indexOf(cmdMsg);
   const preCompactMsgs = missedMessages.slice(0, cmdIndex);

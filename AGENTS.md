@@ -56,6 +56,8 @@ systemctl --user restart nanoclaw
   narrowest relevant test or lint command.
 - Container build cache can retain stale COPY layers. If a clean rebuild is
   necessary, prune the builder before rerunning `./container/build.sh`.
+- If project layout, validation, runtime boundaries, or agent workflow guidance
+  changes, update this file and keep detailed procedures in linked docs.
 
 ## Custom MCP Builds
 
